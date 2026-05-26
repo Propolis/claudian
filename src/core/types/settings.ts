@@ -117,6 +117,12 @@ export interface ClaudianSettings {
   // defaults provided in DEFAULT_CLAUDIAN_SETTINGS, code reads via `?? ...`).
   /** When true, auto-include sessions from ~/.claude/projects/<vault-hash>/ in the resume list. */
   includeVaultCliSessions?: boolean;
+  /**
+   * When true, scan EVERY subfolder of ~/.claude/projects/ — picks up sessions
+   * started from any cwd, not just the vault. Useful when you have chats from
+   * multiple projects (Bakugan, other repos, worktrees, etc.).
+   */
+  scanAllProjectFolders?: boolean;
   /** Additional absolute paths pointing to ~/.claude/projects/<some-cwd-hash>/ folders to scan. */
   externalSessionPaths?: string[];
   /** When true, re-scan external session paths whenever the Obsidian window regains focus. */

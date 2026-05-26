@@ -26,6 +26,11 @@ interface DiscoveryOptions {
   app: App;
   /** Auto-include the vault's own CLI-projects folder. */
   includeVaultCliSessions: boolean;
+  /**
+   * When true, scan EVERY subfolder of ~/.claude/projects/ — picks up sessions
+   * from all cwds, not just the vault's. Overrides the more selective options.
+   */
+  scanAllProjectFolders?: boolean;
   /** Additional absolute paths to scan (already validated/non-empty). */
   externalSessionPaths: string[];
 }
@@ -59,9 +64,25 @@ function getVaultCliProjectsDir(app: App): string | null {
 /**
  * Returns all unique absolute paths to scan, after expansion and existence check.
  * Auto-detected vault path is first (so its sessions sort first on ties).
+ *
+ * When `scanAllProjectFolders` is true, every subfolder of ~/.claude/projects/
+ * is included — this picks up sessions from any cwd the user has worked from.
  */
 function resolveScanPaths(opts: DiscoveryOptions): string[] {
   const out: string[] = [];
+
+  if (opts.scanAllProjectFolders) {
+    const projectsRoot = expandHomePath('~/.claude/projects');
+    try {
+      const entries = fs.readdirSync(projectsRoot);
+      for (const entry of entries) {
+        const sub = path.join(projectsRoot, entry);
+        try {
+          if (fs.statSync(sub).isDirectory()) out.push(sub);
+        } catch { /* skip unreadable */ }
+      }
+    } catch { /* projects dir missing — skip silently */ }
+  }
 
   if (opts.includeVaultCliSessions) {
     const dir = getVaultCliProjectsDir(opts.app);

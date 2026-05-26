@@ -60,6 +60,16 @@
   color: var(--text-muted);
 }
 
+/* Multi-selection fork: sync button in header actions */
+.claudian-sync-btn--spinning svg {
+  animation: claudian-sync-spin 500ms linear;
+}
+
+@keyframes claudian-sync-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .claudian-logo {
   display: flex;
   align-items: center;

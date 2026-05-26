@@ -356,6 +356,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     new Setting(container)
+      .setName('Scan all Claude code projects')
+      .setDesc('Include sessions from EVERY subfolder of ~/.claude/projects/, not just the vault. Pulls in chats from any cwd you have worked from (other repos, worktrees, etc.). May add many entries.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.scanAllProjectFolders ?? false)
+          .onChange(async (value) => {
+            this.plugin.settings.scanAllProjectFolders = value;
+            await this.plugin.saveSettings();
+            this.plugin.refreshExternalSessions();
+          })
+      );
+
+    new Setting(container)
       .setName('Refresh on Obsidian focus')
       .setDesc('Re-scan external session paths whenever the Obsidian window regains focus. Use the refresh button in the resume dropdown for manual control.')
       .addToggle((toggle) =>

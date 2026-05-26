@@ -363,6 +363,24 @@ export class ClaudianView extends ItemView {
       })().catch(() => new Notice('Failed to create conversation'));
     });
 
+    // Multi-selection fork: sync button — re-scans external session paths
+    // and re-syncs titles from JSONL. Positioned before the history button so
+    // the user can refresh the list before opening it.
+    const syncBtn = this.headerActionsContent.createDiv({ cls: 'claudian-header-btn claudian-sync-btn' });
+    setIcon(syncBtn, 'refresh-cw');
+    syncBtn.setAttribute('aria-label', 'Sync chats from Claude Code');
+    syncBtn.title = 'Sync chats from Claude Code';
+    syncBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      syncBtn.addClass('claudian-sync-btn--spinning');
+      this.plugin.refreshExternalSessions();
+      this.updateActiveChatTitle();
+      this.updateHistoryDropdown();
+      window.setTimeout(() => {
+        syncBtn.removeClass('claudian-sync-btn--spinning');
+      }, 500);
+    });
+
     // History dropdown
     const historyContainer = this.headerActionsContent.createDiv({ cls: 'claudian-history-container' });
     const historyBtn = historyContainer.createDiv({ cls: 'claudian-header-btn' });

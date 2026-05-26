@@ -21,6 +21,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
 
   // Multi-selection fork
   includeVaultCliSessions: true,
+  scanAllProjectFolders: false,
   externalSessionPaths: [],
   refreshExternalSessionsOnFocus: true,
 

@@ -830,6 +830,7 @@ export default class ClaudianPlugin extends Plugin {
     const allFound = discoverAllJsonlSessions({
       app: this.app,
       includeVaultCliSessions: settings.includeVaultCliSessions ?? true,
+      scanAllProjectFolders: settings.scanAllProjectFolders ?? false,
       externalSessionPaths: settings.externalSessionPaths ?? [],
     });
 
