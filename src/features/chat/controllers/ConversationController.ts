@@ -439,6 +439,30 @@ export class ConversationController {
   }
 
   /**
+   * Multi-selection fork: re-hydrate messages of the currently active
+   * conversation from its JSONL on disk. Use this after the user has
+   * appended messages in another client (Claude Desktop / CLI) so Claudian
+   * picks them up without a full /resume cycle.
+   *
+   * Safe to call while idle; refuses while streaming or switching to avoid
+   * corrupting in-progress state.
+   */
+  async reloadActiveConversation(): Promise<boolean> {
+    const { plugin, state } = this.deps;
+    if (state.isStreaming || state.isSwitchingConversation || state.isCreatingConversation) {
+      return false;
+    }
+    const id = state.currentConversationId;
+    if (!id) return false;
+
+    const refreshed = await plugin.getConversationById(id);
+    if (!refreshed) return false;
+
+    this.restoreConversation(refreshed);
+    return true;
+  }
+
+  /**
    * Shared logic for restoring a conversation into the current tab.
    * Used by both loadActive() and switchTo() to avoid duplication.
    */

@@ -373,12 +373,25 @@ export class ClaudianView extends ItemView {
     syncBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       syncBtn.addClass('claudian-sync-btn--spinning');
+
+      // 1. Refresh chat list (titles + external sessions).
       this.plugin.refreshExternalSessions();
       this.updateActiveChatTitle();
       this.updateHistoryDropdown();
-      window.setTimeout(() => {
-        syncBtn.removeClass('claudian-sync-btn--spinning');
-      }, 500);
+
+      // 2. Re-hydrate the currently open conversation's messages from JSONL.
+      //    Picks up turns the user appended in Claude Desktop / CLI without
+      //    forcing a /resume cycle.
+      const conversationController = this.tabManager?.getActiveTab()?.controllers.conversationController;
+      const reloadPromise = conversationController?.reloadActiveConversation() ?? Promise.resolve(false);
+
+      void reloadPromise
+        .catch(() => false)
+        .finally(() => {
+          window.setTimeout(() => {
+            syncBtn.removeClass('claudian-sync-btn--spinning');
+          }, 500);
+        });
     });
 
     // History dropdown
