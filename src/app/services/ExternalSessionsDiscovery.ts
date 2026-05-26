@@ -20,7 +20,6 @@ import type { ConversationMeta } from '../../core/types';
 import { expandHomePath, getVaultPath } from '../../utils/path';
 
 const TITLE_MAX_LEN = 60;
-const TITLE_PROBE_BYTES = 16384; // Read at most 16KB to find the first user message.
 const SESSION_FILE_EXT = '.jsonl';
 
 interface DiscoveryOptions {
@@ -89,48 +88,73 @@ function resolveScanPaths(opts: DiscoveryOptions): string[] {
 }
 
 /**
- * Reads the first ~16KB of a JSONL session file and extracts a title hint
- * from the first user message. Returns empty string if no usable user text
- * is found.
+ * Extracts the chat title from a JSONL session file using the same precedence
+ * as the Claude Code desktop app / CLI:
+ *
+ *   1. Last `{"type":"custom-title","customTitle":"…"}` entry (user-set title)
+ *   2. Last `{"type":"ai-title","aiTitle":"…"}` entry (AI-generated title)
+ *   3. Fallback: first user message text (stripped of XML context blocks)
+ *
+ * Title entries appear MULTIPLE times in the file (each regeneration appends
+ * a new line). The latest one is authoritative.
+ *
+ * Performance note: reads the entire file once. JSONL files can be a few MB
+ * but parsing line-by-line is fast (~10-50ms even for 4MB). Cheap substring
+ * pre-filter skips JSON.parse for lines that aren't title entries.
  */
 function extractTitleFromJsonl(filePath: string): string {
-  let buffer: Buffer;
+  let content: string;
   try {
-    const fd = fs.openSync(filePath, 'r');
-    try {
-      const chunk = Buffer.alloc(TITLE_PROBE_BYTES);
-      const bytesRead = fs.readSync(fd, chunk, 0, TITLE_PROBE_BYTES, 0);
-      buffer = chunk.subarray(0, bytesRead);
-    } finally {
-      fs.closeSync(fd);
-    }
+    content = fs.readFileSync(filePath, 'utf8');
   } catch {
     return '';
   }
 
-  const text = buffer.toString('utf8');
-  const lines = text.split('\n');
+  let customTitle = '';
+  let aiTitle = '';
+  let firstUserMessage = '';
 
+  const lines = content.split('\n');
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    let entry: unknown;
-    try {
-      entry = JSON.parse(trimmed);
-    } catch {
+    if (!line || line.length < 16) continue; // skip blank / impossibly short lines
+
+    // Cheap pre-filter: avoid JSON.parse for lines that obviously aren't titles.
+    if (line.includes('"type":"custom-title"')) {
+      try {
+        const entry = JSON.parse(line) as { customTitle?: unknown };
+        if (typeof entry.customTitle === 'string' && entry.customTitle.trim()) {
+          customTitle = entry.customTitle; // last occurrence wins
+        }
+      } catch { /* malformed line, skip */ }
       continue;
     }
-    const candidate = readUserText(entry);
-    if (candidate) {
-      const flat = candidate.replace(/\s+/g, ' ').trim();
-      if (flat.length === 0) continue;
-      return flat.length > TITLE_MAX_LEN
-        ? flat.slice(0, TITLE_MAX_LEN - 1).trimEnd() + '…'
-        : flat;
+
+    if (line.includes('"type":"ai-title"')) {
+      try {
+        const entry = JSON.parse(line) as { aiTitle?: unknown };
+        if (typeof entry.aiTitle === 'string' && entry.aiTitle.trim()) {
+          aiTitle = entry.aiTitle; // last occurrence wins
+        }
+      } catch { /* malformed line, skip */ }
+      continue;
+    }
+
+    // Capture first user message as last-resort fallback.
+    if (!firstUserMessage && line.includes('"type":"user"')) {
+      try {
+        const entry = JSON.parse(line);
+        const text = readUserText(entry);
+        if (text) firstUserMessage = text;
+      } catch { /* skip */ }
     }
   }
 
-  return '';
+  const chosen = customTitle || aiTitle || firstUserMessage;
+  if (!chosen) return '';
+
+  const flat = chosen.replace(/\s+/g, ' ').trim();
+  if (flat.length <= TITLE_MAX_LEN) return flat;
+  return flat.slice(0, TITLE_MAX_LEN - 1).trimEnd() + '…';
 }
 
 /**
