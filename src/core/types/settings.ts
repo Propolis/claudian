@@ -128,16 +128,17 @@ export interface ClaudianSettings {
   /** When true, re-scan external session paths whenever the Obsidian window regains focus. */
   refreshExternalSessionsOnFocus?: boolean;
 
-  // Group settings (multi-selection fork). Groups come from Desktop's
-  // `chromeTabGroupId` (Chromium tab group id). Their names live in Chromium
-  // session state and aren't readable from disk, so we let the user manage
-  // them manually.
+  // Group settings (multi-selection fork). Groups come from Desktop's sidebar
+  // (claude_desktop_config.json → customGroupAssignments), keyed by `cg-<uuid>`.
+  // Names live on Claude's backend, so the user renames manually here.
   /** Group ids that should appear at the top of the list, in this order. */
-  pinnedGroupIds?: number[];
-  /** Display order for non-pinned groups. Groups not listed fall back to id-ascending. */
-  groupOrder?: number[];
-  /** User-set group names. Key is `String(chromeTabGroupId)`. Falls back to "Group XXXX" when missing. */
+  pinnedGroupIds?: string[];
+  /** Display order for non-pinned groups. Groups not listed fall back to Desktop's customGroupOrder. */
+  groupOrder?: string[];
+  /** User-set group names. Key is the cg-uuid. Falls back to "Group abcd" when missing. */
   groupNames?: Record<string, string>;
+  /** Group uuids whose section is currently collapsed. */
+  collapsedGroupIds?: string[];
 
   // Environment
   sharedEnvironmentVariables: string;

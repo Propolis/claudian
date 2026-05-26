@@ -20,9 +20,9 @@ function isExternal(meta: ConversationMeta): meta is ExternalConversationMeta {
   return (meta as { external?: boolean }).external === true;
 }
 
-function getGroupId(meta: ConversationMeta): number | null {
+function getGroupId(meta: ConversationMeta): string | null {
   if (!isExternal(meta)) return null;
-  return meta.chromeTabGroupId ?? null;
+  return meta.groupId ?? null;
 }
 
 function isArchived(meta: ConversationMeta): boolean {
@@ -181,7 +181,7 @@ export class ResumeSessionDropdown {
   // Render
   // ============================================
 
-  private filteredAndGrouped(): { group: number | null; items: ConversationMeta[] }[] {
+  private filteredAndGrouped(): { group: string | null; items: ConversationMeta[] }[] {
     const q = this.searchQuery.trim().toLowerCase();
     const filtered = this.conversations.filter((conv) => {
       if (!this.showArchived && isArchived(conv)) return false;
@@ -189,7 +189,7 @@ export class ResumeSessionDropdown {
       return conv.title.toLowerCase().includes(q);
     });
 
-    const byGroup = new Map<number | null, ConversationMeta[]>();
+    const byGroup = new Map<string | null, ConversationMeta[]>();
     for (const conv of filtered) {
       const gid = getGroupId(conv);
       if (!byGroup.has(gid)) byGroup.set(gid, []);
@@ -197,10 +197,10 @@ export class ResumeSessionDropdown {
     }
 
     // Order: named groups first (by group id ascending), then ungrouped last.
-    const groupKeys = [...byGroup.keys()].filter((k) => k !== null) as number[];
-    groupKeys.sort((a, b) => a - b);
+    const groupKeys = [...byGroup.keys()].filter((k): k is string => k !== null);
+    groupKeys.sort();
 
-    const result: { group: number | null; items: ConversationMeta[] }[] = [];
+    const result: { group: string | null; items: ConversationMeta[] }[] = [];
     for (const gid of groupKeys) {
       result.push({ group: gid, items: byGroup.get(gid)! });
     }
@@ -342,11 +342,11 @@ export class ResumeSessionDropdown {
     }
   }
 
-  private renderGroupHeader(parent: HTMLElement, groupId: number | null, count: number): void {
+  private renderGroupHeader(parent: HTMLElement, groupId: string | null, count: number): void {
     const header = parent.createDiv({ cls: 'claudian-resume-group-header' });
     const label = groupId === null
       ? 'Ungrouped'
-      : `Group ${groupId.toString().slice(-4)}`;
+      : `Group ${groupId.startsWith('cg-') ? groupId.slice(3, 7) : groupId.slice(0, 4)}`;
     header.createSpan({ cls: 'claudian-resume-group-header-label', text: label });
     header.createSpan({ cls: 'claudian-resume-group-header-count', text: String(count) });
   }

@@ -278,8 +278,8 @@ function stripXmlContextFromTitle(title: string): string {
 export interface ExternalConversationMeta extends ConversationMeta {
   external: true;
   sourcePath: string;
-  /** Chromium tab-group id from Desktop metadata. Null = ungrouped / not tracked by Desktop. */
-  chromeTabGroupId?: number | null;
+  /** Sidebar group uuid from Desktop (cg-...). Null = ungrouped / not tracked by Desktop. */
+  groupId?: string | null;
   /** True if Desktop has archived (soft-deleted) this chat. */
   isArchived?: boolean;
 }
@@ -303,8 +303,8 @@ export interface JsonlSessionInfo {
   title: string;
   /** Where the title came from. */
   titleSource: 'desktop' | JsonlTitleSource;
-  /** Chromium tab-group id from Desktop, or null if ungrouped / not in index. */
-  chromeTabGroupId: number | null;
+  /** Sidebar group uuid from Desktop (cg-...), or null if ungrouped / not in index. */
+  groupId: string | null;
   /** True if Desktop has soft-deleted (archived) this chat. */
   isArchived: boolean;
   sourcePath: string;
@@ -318,7 +318,7 @@ export function discoverAllJsonlSessions(opts: DiscoveryOptions): JsonlSessionIn
 
   // Load Desktop metadata index once per discovery pass — it's a few hundred KB
   // total across 70-100 sessions on a typical user's machine.
-  const desktopIndex = loadDesktopSessionsIndex();
+  const desktopIndex = loadDesktopSessionsIndex().byCliSessionId;
 
   const out: JsonlSessionInfo[] = [];
 
@@ -361,7 +361,7 @@ export function discoverAllJsonlSessions(opts: DiscoveryOptions): JsonlSessionIn
         sessionId,
         title,
         titleSource,
-        chromeTabGroupId: desktopMeta?.chromeTabGroupId ?? null,
+        groupId: desktopMeta?.groupId ?? null,
         isArchived: desktopMeta?.isArchived ?? false,
         sourcePath: dir,
         createdAt: stat.birthtimeMs || stat.ctimeMs,
@@ -390,7 +390,7 @@ export function discoverExternalSessions(opts: DiscoveryOptions): ExternalConver
     preview: '',
     external: true,
     sourcePath: info.sourcePath,
-    chromeTabGroupId: info.chromeTabGroupId,
+    groupId: info.groupId,
     isArchived: info.isArchived,
   }));
 }

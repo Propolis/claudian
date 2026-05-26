@@ -13,6 +13,7 @@ import {
   isArchived as conversationIsArchived,
   moveGroup,
   renameGroup,
+  toggleCollapsed,
   togglePinned,
 } from '../../../utils/conversationGrouping';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
@@ -621,9 +622,11 @@ export class ConversationController {
       pinnedGroupIds: plugin.settings.pinnedGroupIds,
       groupOrder: plugin.settings.groupOrder,
       groupNames: plugin.settings.groupNames,
+      collapsedGroupIds: plugin.settings.collapsedGroupIds,
     }, {
       searchQuery: this.historySearchQuery,
       showArchived: this.historyShowArchived,
+      desktopGroupOrder: plugin.getDesktopGroupOrder(),
     });
 
     const totalVisible = sections.reduce((acc, s) => acc + s.items.length, 0);
@@ -639,6 +642,7 @@ export class ConversationController {
 
     for (const section of sections) {
       this.renderHistoryGroupHeader(list, section, options, container);
+      if (section.collapsed) continue;
       for (const conv of section.items) {
         this.renderHistoryItem(list, conv, options);
       }
@@ -697,12 +701,27 @@ export class ConversationController {
     const { plugin } = this.deps;
     const header = parent.createDiv({ cls: 'claudian-history-group-header' });
     if (section.pinned) header.addClass('pinned');
+    if (section.collapsed) header.addClass('collapsed');
+
+    // Chevron — indicates collapsed state. Click anywhere on the header (not
+    // on the action buttons) toggles collapse.
+    const chevron = header.createDiv({ cls: 'claudian-history-group-chevron' });
+    setIcon(chevron, section.collapsed ? 'chevron-right' : 'chevron-down');
 
     const label = header.createSpan({ cls: 'claudian-history-group-label', text: section.name });
     label.title = `${section.name} · ${section.items.length}`;
     header.createSpan({ cls: 'claudian-history-group-count', text: String(section.items.length) });
 
-    // Real group only (not Ungrouped) gets the controls.
+    header.addEventListener('click', (e) => {
+      // Clicks on the action buttons bubble — ignore them.
+      if ((e.target as HTMLElement).closest('.claudian-history-group-action')) return;
+      e.stopPropagation();
+      plugin.settings = toggleCollapsed(plugin.settings, section.groupId) as typeof plugin.settings;
+      void plugin.saveSettings();
+      this.renderHistoryItems(container, options);
+    });
+
+    // Ungrouped section: collapse only, no other controls.
     if (section.groupId === null) return;
 
     const groupId = section.groupId;
@@ -726,7 +745,7 @@ export class ConversationController {
       attr: { type: 'button', 'aria-label': 'Move group up' },
     });
     upBtn.title = 'Move up';
-    setIcon(upBtn, 'chevron-up');
+    setIcon(upBtn, 'arrow-up');
     upBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       plugin.settings = moveGroup(plugin.settings, groupId, 'up') as typeof plugin.settings;
@@ -739,7 +758,7 @@ export class ConversationController {
       attr: { type: 'button', 'aria-label': 'Move group down' },
     });
     downBtn.title = 'Move down';
-    setIcon(downBtn, 'chevron-down');
+    setIcon(downBtn, 'arrow-down');
     downBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       plugin.settings = moveGroup(plugin.settings, groupId, 'down') as typeof plugin.settings;
@@ -760,7 +779,7 @@ export class ConversationController {
   }
 
   private promptRenameGroup(
-    groupId: number,
+    groupId: string,
     currentName: string,
     container: HTMLElement,
     options: HistoryRenderOptions,

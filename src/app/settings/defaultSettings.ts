@@ -27,6 +27,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   pinnedGroupIds: [],
   groupOrder: [],
   groupNames: {},
+  collapsedGroupIds: [],
 
   sharedEnvironmentVariables: '',
   envSnippets: [],

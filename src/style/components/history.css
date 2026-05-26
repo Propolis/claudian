@@ -119,14 +119,38 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px 6px 12px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  padding: 6px 10px 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--text-muted);
   background: var(--background-secondary);
   border-top: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  user-select: none;
+}
+
+.claudian-history-group-header:hover {
+  background: var(--background-modifier-hover);
+}
+
+.claudian-history-group-chevron {
+  display: inline-flex;
+  align-items: center;
+  width: 14px;
+  height: 14px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+  transition: transform 100ms ease;
+}
+
+.claudian-history-group-chevron svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-history-group-header.collapsed {
+  border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .claudian-history-list > .claudian-history-group-header:first-child {

@@ -4,37 +4,43 @@
  * Computes the ordered list of group sections used by both the history
  * dropdown and the /resume popup. Encapsulates:
  *   - Filtering by search query and archived state
- *   - Grouping by chromeTabGroupId
- *   - Ordering (pinned → user-defined order → id ascending → ungrouped last)
- *   - Resolving display names (user-set or fallback to "Group XXXX")
+ *   - Grouping by Desktop sidebar group uuid (cg-<uuid>) — sourced from
+ *     claude_desktop_config.json → customGroupAssignments
+ *   - Ordering: pinned (user) → user-defined order → Desktop's customGroupOrder
+ *     → ungrouped last
+ *   - Resolving display names (user-set, else "Group abcd")
+ *   - Collapse state (passed through, applied by the renderer)
  */
 
 import type { ExternalConversationMeta } from '../app/services/ExternalSessionsDiscovery';
 import type { ConversationMeta } from '../core/types';
 
 export interface GroupSection {
-  /** Group id, or null for the "Ungrouped" bucket. */
-  groupId: number | null;
+  /** Group uuid (cg-...), or null for the "Ungrouped" bucket. */
+  groupId: string | null;
   /** Resolved display name. */
   name: string;
   /** Whether this section is currently pinned. */
   pinned: boolean;
+  /** Whether this section is currently collapsed. */
+  collapsed: boolean;
   items: ConversationMeta[];
 }
 
 export interface GroupSettings {
-  pinnedGroupIds?: number[];
-  groupOrder?: number[];
+  pinnedGroupIds?: string[];
+  groupOrder?: string[];
   groupNames?: Record<string, string>;
+  collapsedGroupIds?: string[];
 }
 
 function isExternal(meta: ConversationMeta): meta is ExternalConversationMeta {
   return (meta as { external?: boolean }).external === true;
 }
 
-export function getGroupId(meta: ConversationMeta): number | null {
+export function getGroupId(meta: ConversationMeta): string | null {
   if (!isExternal(meta)) return null;
-  return meta.chromeTabGroupId ?? null;
+  return meta.groupId ?? null;
 }
 
 export function isArchived(meta: ConversationMeta): boolean {
@@ -42,27 +48,32 @@ export function isArchived(meta: ConversationMeta): boolean {
   return meta.isArchived === true;
 }
 
-export function resolveGroupName(groupId: number | null, settings: GroupSettings): string {
+export function resolveGroupName(groupId: string | null, settings: GroupSettings): string {
   if (groupId === null) return 'Ungrouped';
-  const custom = settings.groupNames?.[String(groupId)];
+  const custom = settings.groupNames?.[groupId];
   if (custom && custom.trim()) return custom.trim();
-  // Fallback: last 4 digits of the group id (Chromium ids are large integers).
-  return `Group ${String(groupId).slice(-4)}`;
+  // Fallback: short hash from the cg-<uuid>. Stable across reloads.
+  const suffix = groupId.startsWith('cg-') ? groupId.slice(3, 7) : groupId.slice(0, 4);
+  return `Group ${suffix}`;
 }
 
 /**
- * Computes filtered, sorted, grouped sections from raw conversation list.
+ * Computes filtered, sorted, grouped sections from a raw conversation list.
  *
  * Section ordering rules:
- *   1. Pinned groups appear first, in `pinnedGroupIds` order.
- *   2. Then non-pinned groups, ordered by `groupOrder` (groups listed first),
- *      then by id ascending for groups not in `groupOrder`.
+ *   1. Pinned groups (user-set) in `pinnedGroupIds` order.
+ *   2. Then non-pinned groups, ordered by `groupOrder` (user-set), then by
+ *      Desktop's `customGroupOrder` (`desktopGroupOrder`), then by id ascending
+ *      for any group not in either list.
  *   3. Ungrouped bucket always last.
+ *
+ * `desktopGroupOrder` is the order Desktop renders groups in the sidebar.
+ * Pass an empty array if unavailable.
  */
 export function computeGroupSections(
   conversations: ConversationMeta[],
   settings: GroupSettings,
-  options: { searchQuery: string; showArchived: boolean },
+  options: { searchQuery: string; showArchived: boolean; desktopGroupOrder?: string[] },
 ): GroupSection[] {
   const q = options.searchQuery.trim().toLowerCase();
   const filtered = conversations.filter((conv) => {
@@ -72,7 +83,7 @@ export function computeGroupSections(
   });
 
   // Bucket by group id.
-  const byGroup = new Map<number | null, ConversationMeta[]>();
+  const byGroup = new Map<string | null, ConversationMeta[]>();
   for (const conv of filtered) {
     const gid = getGroupId(conv);
     if (!byGroup.has(gid)) byGroup.set(gid, []);
@@ -80,9 +91,19 @@ export function computeGroupSections(
   }
 
   const pinned = new Set(settings.pinnedGroupIds ?? []);
-  const orderHints = settings.groupOrder ?? [];
-  const orderIndex = new Map<number, number>();
-  orderHints.forEach((id, idx) => orderIndex.set(id, idx));
+  const collapsedSet = new Set(settings.collapsedGroupIds ?? []);
+
+  // Build the user-defined order index first, then fall back to desktop order.
+  const userOrder = settings.groupOrder ?? [];
+  const desktopOrder = options.desktopGroupOrder ?? [];
+  const orderIndex = new Map<string, number>();
+  let cursor = 0;
+  for (const id of userOrder) {
+    if (!orderIndex.has(id)) orderIndex.set(id, cursor++);
+  }
+  for (const id of desktopOrder) {
+    if (!orderIndex.has(id)) orderIndex.set(id, cursor++);
+  }
 
   const pinnedSections: GroupSection[] = [];
   const namedSections: GroupSection[] = [];
@@ -94,6 +115,7 @@ export function computeGroupSections(
         groupId: null,
         name: 'Ungrouped',
         pinned: false,
+        collapsed: collapsedSet.has('__ungrouped__'),
         items,
       };
       continue;
@@ -102,6 +124,7 @@ export function computeGroupSections(
       groupId: gid,
       name: resolveGroupName(gid, settings),
       pinned: pinned.has(gid),
+      collapsed: collapsedSet.has(gid),
       items,
     };
     if (pinned.has(gid)) pinnedSections.push(section);
@@ -109,24 +132,24 @@ export function computeGroupSections(
   }
 
   // Pinned: order by pinnedGroupIds index.
-  const pinnedIndex = new Map<number, number>();
+  const pinnedIndex = new Map<string, number>();
   (settings.pinnedGroupIds ?? []).forEach((id, idx) => pinnedIndex.set(id, idx));
   pinnedSections.sort((a, b) => {
-    const ai = pinnedIndex.get(a.groupId as number) ?? Number.MAX_SAFE_INTEGER;
-    const bi = pinnedIndex.get(b.groupId as number) ?? Number.MAX_SAFE_INTEGER;
+    const ai = pinnedIndex.get(a.groupId as string) ?? Number.MAX_SAFE_INTEGER;
+    const bi = pinnedIndex.get(b.groupId as string) ?? Number.MAX_SAFE_INTEGER;
     return ai - bi;
   });
 
-  // Non-pinned: groupOrder first, then by id ascending.
+  // Non-pinned: orderIndex (user → desktop), then by id.
   namedSections.sort((a, b) => {
-    const aOrdered = orderIndex.has(a.groupId as number);
-    const bOrdered = orderIndex.has(b.groupId as number);
+    const aOrdered = orderIndex.has(a.groupId as string);
+    const bOrdered = orderIndex.has(b.groupId as string);
     if (aOrdered && bOrdered) {
-      return (orderIndex.get(a.groupId as number)!) - (orderIndex.get(b.groupId as number)!);
+      return orderIndex.get(a.groupId as string)! - orderIndex.get(b.groupId as string)!;
     }
     if (aOrdered) return -1;
     if (bOrdered) return 1;
-    return (a.groupId as number) - (b.groupId as number);
+    return (a.groupId as string).localeCompare(b.groupId as string);
   });
 
   const result: GroupSection[] = [...pinnedSections, ...namedSections];
@@ -139,7 +162,7 @@ export function computeGroupSections(
 // Callers persist the result via plugin.saveSettings().
 // =========================================================================
 
-export function togglePinned(settings: GroupSettings, groupId: number): GroupSettings {
+export function togglePinned(settings: GroupSettings, groupId: string): GroupSettings {
   const current = settings.pinnedGroupIds ?? [];
   const next = current.includes(groupId)
     ? current.filter((id) => id !== groupId)
@@ -147,7 +170,7 @@ export function togglePinned(settings: GroupSettings, groupId: number): GroupSet
   return { ...settings, pinnedGroupIds: next };
 }
 
-export function moveGroup(settings: GroupSettings, groupId: number, direction: 'up' | 'down'): GroupSettings {
+export function moveGroup(settings: GroupSettings, groupId: string, direction: 'up' | 'down'): GroupSettings {
   // Determine which list this group lives in (pinned vs ordered).
   const pinned = settings.pinnedGroupIds ?? [];
   if (pinned.includes(groupId)) {
@@ -161,7 +184,7 @@ export function moveGroup(settings: GroupSettings, groupId: number, direction: '
   return { ...settings, groupOrder: shift(order, groupId, direction) };
 }
 
-function shift(list: number[], item: number, direction: 'up' | 'down'): number[] {
+function shift<T>(list: T[], item: T, direction: 'up' | 'down'): T[] {
   const idx = list.indexOf(item);
   if (idx === -1) return list;
   const target = direction === 'up' ? idx - 1 : idx + 1;
@@ -171,13 +194,22 @@ function shift(list: number[], item: number, direction: 'up' | 'down'): number[]
   return copy;
 }
 
-export function renameGroup(settings: GroupSettings, groupId: number, name: string): GroupSettings {
+export function renameGroup(settings: GroupSettings, groupId: string, name: string): GroupSettings {
   const map = { ...(settings.groupNames ?? {}) };
   const trimmed = name.trim();
   if (trimmed) {
-    map[String(groupId)] = trimmed;
+    map[groupId] = trimmed;
   } else {
-    delete map[String(groupId)];
+    delete map[groupId];
   }
   return { ...settings, groupNames: map };
+}
+
+export function toggleCollapsed(settings: GroupSettings, groupId: string | null): GroupSettings {
+  const key = groupId ?? '__ungrouped__';
+  const current = settings.collapsedGroupIds ?? [];
+  const next = current.includes(key)
+    ? current.filter((id) => id !== key)
+    : [...current, key];
+  return { ...settings, collapsedGroupIds: next };
 }

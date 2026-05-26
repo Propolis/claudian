@@ -19,6 +19,7 @@ import {
   discoverAllJsonlSessions,
   type ExternalConversationMeta,
 } from './app/services/ExternalSessionsDiscovery';
+import { loadDesktopGroupsConfig } from './app/services/DesktopGroupsConfig';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
 import { SharedStorageService } from './app/storage/SharedStorageService';
 import type { SharedAppStorage } from './core/bootstrap/storage';
@@ -67,6 +68,8 @@ export default class ClaudianPlugin extends Plugin {
   private externalConversations: ExternalConversationMeta[] = [];
   /** Multi-selection fork: subscribers notified after refreshExternalSessions(). */
   private externalSessionListeners: Set<() => void> = new Set();
+  /** Multi-selection fork: Desktop's sidebar group order (cg-uuids), refreshed on each external scan. */
+  private desktopGroupOrder: string[] = [];
 
   async onload() {
     await this.loadSettings();
@@ -816,6 +819,11 @@ export default class ClaudianPlugin extends Plugin {
     return this.externalConversations.find((e) => e.id === id) ?? null;
   }
 
+  /** Multi-selection fork: Desktop's sidebar group order (cg-uuids). */
+  getDesktopGroupOrder(): string[] {
+    return [...this.desktopGroupOrder];
+  }
+
   /**
    * Multi-selection fork: rescan all configured external session paths.
    * Two effects:
@@ -833,6 +841,9 @@ export default class ClaudianPlugin extends Plugin {
       scanAllProjectFolders: settings.scanAllProjectFolders ?? false,
       externalSessionPaths: settings.externalSessionPaths ?? [],
     });
+
+    // Refresh Desktop's group order — used for default group display order.
+    this.desktopGroupOrder = loadDesktopGroupsConfig().groupOrder;
 
     // Index by sessionId for fast lookup.
     const bySessionId = new Map<string, typeof allFound[number]>();
@@ -887,7 +898,7 @@ export default class ClaudianPlugin extends Plugin {
         preview: '',
         external: true,
         sourcePath: info.sourcePath,
-        chromeTabGroupId: info.chromeTabGroupId,
+        groupId: info.groupId,
         isArchived: info.isArchived,
       }));
 

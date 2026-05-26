@@ -24,6 +24,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import { loadDesktopGroupsConfig } from './DesktopGroupsConfig';
+
 const DESKTOP_SESSIONS_ROOT_MAC = path.join(
   os.homedir(),
   'Library',
@@ -35,12 +37,14 @@ const DESKTOP_SESSIONS_ROOT_MAC = path.join(
 export interface DesktopSessionMeta {
   /** cliSessionId — matches the JSONL filename in ~/.claude/projects. */
   cliSessionId: string;
+  /** Desktop's local session id (`local_<uuid>`) — the file basename. */
+  localSessionId: string;
   /** Desktop's displayed title for this chat. */
   title: string;
   /** 'user' (renamed manually), 'auto' (AI-generated), or null. */
   titleSource: string | null;
-  /** Chromium tab-group integer id. Null = ungrouped. */
-  chromeTabGroupId: number | null;
+  /** Sidebar group uuid (cg-...) from claude_desktop_config.json. Null = Ungrouped. */
+  groupId: string | null;
   /** Desktop's archive (soft-delete) flag. */
   isArchived: boolean;
   /** Working directory the session was started in. */
@@ -67,16 +71,26 @@ function getDesktopSessionsRoot(): string | null {
  * Errors on individual files are swallowed — a corrupt file shouldn't
  * break the whole index.
  */
-export function loadDesktopSessionsIndex(): Map<string, DesktopSessionMeta> {
-  const index = new Map<string, DesktopSessionMeta>();
+export interface DesktopSessionsIndexResult {
+  /** Keyed by cliSessionId — same as the JSONL filename. */
+  byCliSessionId: Map<string, DesktopSessionMeta>;
+  /** Sidebar group uuids in the order Desktop displays them. */
+  groupOrder: string[];
+}
+
+export function loadDesktopSessionsIndex(): DesktopSessionsIndexResult {
+  const byCliSessionId = new Map<string, DesktopSessionMeta>();
+  const groupsConfig = loadDesktopGroupsConfig();
   const root = getDesktopSessionsRoot();
-  if (!root) return index;
+  if (!root) {
+    return { byCliSessionId, groupOrder: groupsConfig.groupOrder };
+  }
 
   let userDirs: string[];
   try {
     userDirs = fs.readdirSync(root);
   } catch {
-    return index;
+    return { byCliSessionId, groupOrder: groupsConfig.groupOrder };
   }
 
   for (const userId of userDirs) {
@@ -102,19 +116,21 @@ export function loadDesktopSessionsIndex(): Map<string, DesktopSessionMeta> {
         } catch { continue; }
         if (!stat.isFile()) continue;
 
-        const meta = readDesktopMetaFile(filePath);
+        const meta = readDesktopMetaFile(filePath, groupsConfig.groupOfSession);
         if (meta && meta.cliSessionId) {
-          // Last-write-wins if duplicates exist (shouldn't, but be safe).
-          index.set(meta.cliSessionId, meta);
+          byCliSessionId.set(meta.cliSessionId, meta);
         }
       }
     }
   }
 
-  return index;
+  return { byCliSessionId, groupOrder: groupsConfig.groupOrder };
 }
 
-function readDesktopMetaFile(filePath: string): DesktopSessionMeta | null {
+function readDesktopMetaFile(
+  filePath: string,
+  groupOfSession: Map<string, string>,
+): DesktopSessionMeta | null {
   let content: string;
   try {
     content = fs.readFileSync(filePath, 'utf8');
@@ -133,18 +149,20 @@ function readDesktopMetaFile(filePath: string): DesktopSessionMeta | null {
   const cliSessionId = typeof obj.cliSessionId === 'string' ? obj.cliSessionId : null;
   if (!cliSessionId) return null;
 
+  const localSessionId = typeof obj.sessionId === 'string' ? obj.sessionId : '';
   const title = typeof obj.title === 'string' ? obj.title.trim() : '';
   const titleSource = typeof obj.titleSource === 'string' ? obj.titleSource : null;
-  const chromeTabGroupId = typeof obj.chromeTabGroupId === 'number' ? obj.chromeTabGroupId : null;
+  const groupId = groupOfSession.get(localSessionId) ?? null;
   const isArchived = obj.isArchived === true;
   const cwd = typeof obj.cwd === 'string' ? obj.cwd : null;
   const lastActivityAt = typeof obj.lastActivityAt === 'number' ? obj.lastActivityAt : null;
 
   return {
     cliSessionId,
+    localSessionId,
     title,
     titleSource,
-    chromeTabGroupId,
+    groupId,
     isArchived,
     cwd,
     lastActivityAt,
