@@ -404,15 +404,35 @@ export class SelectionController {
     this.onSelectionPresenceChange = onPresenceChange;
   }
 
-  /** Snapshot of the active selection enriched with the nearest Markdown heading. Used by the floating "Attach to chat" button. */
-  buildPinnedFromActive(): PinnedSelection | null {
+  /**
+   * Snapshot of the active selection enriched with the nearest Markdown heading.
+   *
+   * Edit mode: line numbers come straight from CodeMirror's cursor positions.
+   * Reading/preview mode: CM6 cursor is unavailable, so we resolve line numbers
+   * via a text match against the file contents (same fallback pattern that
+   * `quote-for-ai` uses). Async so we can `vault.read` when needed.
+   */
+  async buildPinnedFromActive(): Promise<PinnedSelection | null> {
     const s = this.storedSelection;
     if (!s || !s.selectedText.trim()) return null;
 
-    const lineCount = s.lineCount;
-    const startLine = s.startLine ?? 1;
-    const endLine = startLine + lineCount - 1;
+    let startLine = s.startLine;
+    let lineCount = s.lineCount;
 
+    // Preview mode (or any case where editor didn't supply a line) — derive
+    // start/end via text match against the file. Keeps `lines` accurate so
+    // Claude can Read(offset, limit) without re-searching.
+    if (startLine === undefined) {
+      const derived = await this.deriveLinesFromContent(s.notePath, s.selectedText);
+      if (derived) {
+        startLine = derived.startLine;
+        lineCount = derived.lineCount;
+      } else {
+        startLine = 1;
+      }
+    }
+
+    const endLine = startLine + lineCount - 1;
     const heading = this.findEnclosingHeading(s.notePath, startLine);
 
     return {
@@ -426,13 +446,59 @@ export class SelectionController {
     };
   }
 
-  pinActiveSelection(): PinnedSelection | null {
+  async pinActiveSelection(): Promise<PinnedSelection | null> {
     const state = this.chatState;
     if (!state) return null;
-    const pin = this.buildPinnedFromActive();
+    const pin = await this.buildPinnedFromActive();
     if (!pin) return null;
     state.addPinnedSelection(pin);
     return pin;
+  }
+
+  /**
+   * Reads the file and searches for the selection text to compute true 1-indexed
+   * start/end line numbers. Falls back through progressively looser matches
+   * (full text → trimmed → first non-empty line) because preview-mode DOM text
+   * may drop trailing whitespace or differ from source markdown for headings,
+   * list bullets, etc.
+   */
+  private async deriveLinesFromContent(
+    notePath: string,
+    selectedText: string,
+  ): Promise<{ startLine: number; lineCount: number } | null> {
+    if (!notePath || notePath === 'unknown') return null;
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile)) return null;
+
+    let content: string;
+    try {
+      content = await this.app.vault.read(file);
+    } catch {
+      return null;
+    }
+
+    const firstNonEmptyLine = selectedText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => l.length > 0) ?? '';
+
+    const candidates = [selectedText, selectedText.trim(), firstNonEmptyLine]
+      .filter((c): c is string => Boolean(c));
+
+    for (const candidate of candidates) {
+      const idx = content.indexOf(candidate);
+      if (idx === -1) continue;
+
+      const startLine = content.slice(0, idx).split('\n').length;
+      // Use the full original selectedText length for end so multi-line
+      // selections that matched only on first-line still cover the right span.
+      const matchEndIdx = Math.min(idx + selectedText.length, content.length);
+      const endLine = content.slice(0, matchEndIdx).split('\n').length;
+      const lineCount = Math.max(1, endLine - startLine + 1);
+      return { startLine, lineCount };
+    }
+
+    return null;
   }
 
   private findEnclosingHeading(notePath: string, startLine1Indexed: number): string {

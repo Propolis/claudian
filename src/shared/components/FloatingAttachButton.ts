@@ -90,13 +90,15 @@ export class FloatingAttachButton {
   }
 
   private handleClick(): void {
-    const pin = this.selectionController.pinActiveSelection();
-    if (!pin) return;
-    // Visual feedback — brief pulse.
-    this.buttonEl.addClass('claudian-floating-attach-btn--pulse');
-    window.setTimeout(() => {
-      this.buttonEl.removeClass('claudian-floating-attach-btn--pulse');
-    }, 280);
+    void (async () => {
+      const pin = await this.selectionController.pinActiveSelection();
+      if (!pin) return;
+      // Visual feedback — brief pulse.
+      this.buttonEl.addClass('claudian-floating-attach-btn--pulse');
+      window.setTimeout(() => {
+        this.buttonEl.removeClass('claudian-floating-attach-btn--pulse');
+      }, 280);
+    })();
   }
 
   private startRepositionLoop(): void {
