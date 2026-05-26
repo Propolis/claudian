@@ -3,6 +3,12 @@
  *
  * Dropup UI for selecting a previous conversation to resume.
  * Shown when the /resume built-in command is executed.
+ *
+ * Multi-selection fork additions:
+ *   - Search input filters by title substring (case-insensitive).
+ *   - Sessions grouped by Desktop's `chromeTabGroupId` with section headers.
+ *   - Archived (soft-deleted in Desktop) sessions hidden by default; toggle to show.
+ *   - Refresh button re-scans external CLI session paths + Desktop metadata.
  */
 
 import { setIcon } from 'obsidian';
@@ -12,6 +18,16 @@ import type { ConversationMeta } from '../../core/types';
 
 function isExternal(meta: ConversationMeta): meta is ExternalConversationMeta {
   return (meta as { external?: boolean }).external === true;
+}
+
+function getGroupId(meta: ConversationMeta): number | null {
+  if (!isExternal(meta)) return null;
+  return meta.chromeTabGroupId ?? null;
+}
+
+function isArchived(meta: ConversationMeta): boolean {
+  if (!isExternal(meta)) return false;
+  return meta.isArchived === true;
 }
 
 export interface ResumeSessionDropdownCallbacks {
@@ -29,7 +45,12 @@ export class ResumeSessionDropdown {
   private conversations: ConversationMeta[];
   private currentConversationId: string | null;
   private selectedIndex = 0;
-  private onInput: () => void;
+  // Multi-selection fork state:
+  private searchQuery = '';
+  private showArchived = false;
+  /** Items currently rendered (after filter + sort), in display order. */
+  private visibleConversations: ConversationMeta[] = [];
+  private outsideClickHandler: ((e: MouseEvent) => void) | null = null;
 
   constructor(
     containerEl: HTMLElement,
@@ -48,9 +69,18 @@ export class ResumeSessionDropdown {
     this.render();
     this.dropdownEl.addClass('visible');
 
-    // Auto-dismiss when user starts typing
-    this.onInput = () => this.dismiss();
-    this.inputEl.addEventListener('input', this.onInput);
+    // Dismiss on click outside the dropdown.
+    this.outsideClickHandler = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (this.dropdownEl.contains(target)) return;
+      this.dismiss();
+    };
+    // Use capture phase + setTimeout so the opening click doesn't immediately
+    // dismiss it.
+    window.setTimeout(() => {
+      activeDocument.addEventListener('mousedown', this.outsideClickHandler!, true);
+    }, 0);
   }
 
   handleKeydown(e: KeyboardEvent): boolean {
@@ -67,7 +97,7 @@ export class ResumeSessionDropdown {
         return true;
       case 'Enter':
       case 'Tab':
-        if (this.conversations.length > 0) {
+        if (this.visibleConversations.length > 0) {
           e.preventDefault();
           this.selectItem();
           return true;
@@ -86,7 +116,10 @@ export class ResumeSessionDropdown {
   }
 
   destroy(): void {
-    this.inputEl.removeEventListener('input', this.onInput);
+    if (this.outsideClickHandler) {
+      activeDocument.removeEventListener('mousedown', this.outsideClickHandler, true);
+      this.outsideClickHandler = null;
+    }
     this.dropdownEl?.remove();
   }
 
@@ -96,8 +129,7 @@ export class ResumeSessionDropdown {
   }
 
   private selectItem(): void {
-    if (this.conversations.length === 0) return;
-    const selected = this.conversations[this.selectedIndex];
+    const selected = this.visibleConversations[this.selectedIndex];
     if (!selected) return;
 
     // Dismiss without switching if selecting the current conversation
@@ -110,7 +142,8 @@ export class ResumeSessionDropdown {
   }
 
   private navigate(direction: number): void {
-    const maxIndex = this.conversations.length - 1;
+    const maxIndex = this.visibleConversations.length - 1;
+    if (maxIndex < 0) return;
     this.selectedIndex = Math.max(0, Math.min(maxIndex, this.selectedIndex + direction));
     this.updateSelection();
   }
@@ -129,7 +162,8 @@ export class ResumeSessionDropdown {
 
   private sortConversations(conversations: ConversationMeta[]): ConversationMeta[] {
     return [...conversations].sort((a, b) => {
-      return (b.lastResponseAt ?? b.createdAt) - (a.lastResponseAt ?? a.createdAt);
+      return (b.lastResponseAt ?? b.updatedAt ?? b.createdAt)
+        - (a.lastResponseAt ?? a.updatedAt ?? a.createdAt);
     });
   }
 
@@ -138,18 +172,82 @@ export class ResumeSessionDropdown {
     if (!this.callbacks.onRefresh) return;
     const updated = this.callbacks.onRefresh();
     this.conversations = this.sortConversations(updated);
-    this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.conversations.length - 1));
+    this.selectedIndex = 0;
     this.render();
     this.dropdownEl.addClass('visible');
+  }
+
+  // ============================================
+  // Render
+  // ============================================
+
+  private filteredAndGrouped(): { group: number | null; items: ConversationMeta[] }[] {
+    const q = this.searchQuery.trim().toLowerCase();
+    const filtered = this.conversations.filter((conv) => {
+      if (!this.showArchived && isArchived(conv)) return false;
+      if (!q) return true;
+      return conv.title.toLowerCase().includes(q);
+    });
+
+    const byGroup = new Map<number | null, ConversationMeta[]>();
+    for (const conv of filtered) {
+      const gid = getGroupId(conv);
+      if (!byGroup.has(gid)) byGroup.set(gid, []);
+      byGroup.get(gid)!.push(conv);
+    }
+
+    // Order: named groups first (by group id ascending), then ungrouped last.
+    const groupKeys = [...byGroup.keys()].filter((k) => k !== null) as number[];
+    groupKeys.sort((a, b) => a - b);
+
+    const result: { group: number | null; items: ConversationMeta[] }[] = [];
+    for (const gid of groupKeys) {
+      result.push({ group: gid, items: byGroup.get(gid)! });
+    }
+    if (byGroup.has(null)) {
+      result.push({ group: null, items: byGroup.get(null)! });
+    }
+    return result;
   }
 
   private render(): void {
     this.dropdownEl.empty();
 
+    this.renderHeader();
+    this.renderSearchBar();
+    this.renderControls();
+
+    const sections = this.filteredAndGrouped();
+    this.visibleConversations = sections.flatMap((s) => s.items);
+
+    if (this.visibleConversations.length === 0) {
+      this.dropdownEl.createDiv({
+        cls: 'claudian-resume-empty',
+        text: this.searchQuery ? 'No matches' : 'No conversations',
+      });
+      return;
+    }
+
+    if (this.selectedIndex >= this.visibleConversations.length) {
+      this.selectedIndex = 0;
+    }
+
+    const list = this.dropdownEl.createDiv({ cls: 'claudian-resume-list' });
+
+    let runningIndex = 0;
+    for (const section of sections) {
+      this.renderGroupHeader(list, section.group, section.items.length);
+      for (const conv of section.items) {
+        this.renderItem(list, conv, runningIndex);
+        runningIndex++;
+      }
+    }
+  }
+
+  private renderHeader(): void {
     const header = this.dropdownEl.createDiv({ cls: 'claudian-resume-header' });
     header.createSpan({ cls: 'claudian-resume-header-title', text: 'Resume conversation' });
 
-    // Multi-selection fork: refresh button — re-scans external CLI session paths.
     if (this.callbacks.onRefresh) {
       const refreshBtn = header.createEl('button', {
         cls: 'claudian-resume-refresh',
@@ -166,54 +264,135 @@ export class ResumeSessionDropdown {
         }, 400);
       });
     }
+  }
 
-    if (this.conversations.length === 0) {
-      this.dropdownEl.createDiv({ cls: 'claudian-resume-empty', text: 'No conversations' });
+  private renderSearchBar(): void {
+    const wrap = this.dropdownEl.createDiv({ cls: 'claudian-resume-search' });
+    const iconEl = wrap.createDiv({ cls: 'claudian-resume-search-icon' });
+    setIcon(iconEl, 'search');
+
+    const input = wrap.createEl('input', {
+      cls: 'claudian-resume-search-input',
+      attr: { type: 'text', placeholder: 'Search chats…', spellcheck: 'false' },
+    });
+    input.value = this.searchQuery;
+
+    input.addEventListener('input', () => {
+      this.searchQuery = input.value;
+      this.selectedIndex = 0;
+      this.rerenderListOnly();
+    });
+    input.addEventListener('keydown', (e) => {
+      // Forward navigation keys to our handler so ArrowUp/Down/Enter works
+      // even while focus is in the search field.
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === 'Escape') {
+        this.handleKeydown(e);
+      }
+    });
+
+    // Auto-focus on initial open so the user can type immediately.
+    window.setTimeout(() => input.focus(), 0);
+  }
+
+  private renderControls(): void {
+    const archivedCount = this.conversations.filter(isArchived).length;
+    if (archivedCount === 0) return;
+
+    const wrap = this.dropdownEl.createDiv({ cls: 'claudian-resume-controls' });
+    const toggle = wrap.createEl('label', { cls: 'claudian-resume-toggle' });
+    const cb = toggle.createEl('input', { attr: { type: 'checkbox' } });
+    cb.checked = this.showArchived;
+    toggle.createSpan({ text: `Show archived (${archivedCount})` });
+    cb.addEventListener('change', () => {
+      this.showArchived = cb.checked;
+      this.selectedIndex = 0;
+      this.rerenderListOnly();
+    });
+  }
+
+  private rerenderListOnly(): void {
+    // Remove existing list + empty placeholder, re-render in place. Keeps
+    // search input focused (we don't recreate it).
+    this.dropdownEl.querySelector('.claudian-resume-list')?.remove();
+    this.dropdownEl.querySelector('.claudian-resume-empty')?.remove();
+
+    const sections = this.filteredAndGrouped();
+    this.visibleConversations = sections.flatMap((s) => s.items);
+
+    if (this.visibleConversations.length === 0) {
+      this.dropdownEl.createDiv({
+        cls: 'claudian-resume-empty',
+        text: this.searchQuery ? 'No matches' : 'No conversations',
+      });
       return;
     }
 
-    const list = this.dropdownEl.createDiv({ cls: 'claudian-resume-list' });
-
-    for (let i = 0; i < this.conversations.length; i++) {
-      const conv = this.conversations[i];
-      const isCurrent = conv.id === this.currentConversationId;
-
-      const item = list.createDiv({ cls: 'claudian-resume-item' });
-      if (isCurrent) item.addClass('current');
-      if (i === this.selectedIndex) item.addClass('selected');
-
-      const external = isExternal(conv);
-      if (external) item.addClass('claudian-resume-item--external');
-
-      const iconEl = item.createDiv({ cls: 'claudian-resume-item-icon' });
-      setIcon(iconEl, isCurrent ? 'message-square-dot' : external ? 'terminal' : 'message-square');
-
-      const content = item.createDiv({ cls: 'claudian-resume-item-content' });
-      const titleRow = content.createDiv({ cls: 'claudian-resume-item-title-row' });
-      const titleEl = titleRow.createSpan({ cls: 'claudian-resume-item-title', text: conv.title });
-      titleEl.setAttribute('title', conv.title);
-      if (external) {
-        const badge = titleRow.createSpan({ cls: 'claudian-resume-item-badge', text: 'CLI' });
-        badge.title = `External session from ${(conv as ExternalConversationMeta).sourcePath}`;
-      }
-      content.createDiv({
-        cls: 'claudian-resume-item-date',
-        text: isCurrent ? 'Current session' : this.formatDate(conv.lastResponseAt ?? conv.createdAt),
-      });
-
-      item.addEventListener('click', () => {
-        if (isCurrent) {
-          this.dismiss();
-          return;
-        }
-        this.callbacks.onSelect(conv.id);
-      });
-
-      item.addEventListener('mouseenter', () => {
-        this.selectedIndex = i;
-        this.updateSelection();
-      });
+    if (this.selectedIndex >= this.visibleConversations.length) {
+      this.selectedIndex = 0;
     }
+
+    const list = this.dropdownEl.createDiv({ cls: 'claudian-resume-list' });
+    let runningIndex = 0;
+    for (const section of sections) {
+      this.renderGroupHeader(list, section.group, section.items.length);
+      for (const conv of section.items) {
+        this.renderItem(list, conv, runningIndex);
+        runningIndex++;
+      }
+    }
+  }
+
+  private renderGroupHeader(parent: HTMLElement, groupId: number | null, count: number): void {
+    const header = parent.createDiv({ cls: 'claudian-resume-group-header' });
+    const label = groupId === null
+      ? 'Ungrouped'
+      : `Group ${groupId.toString().slice(-4)}`;
+    header.createSpan({ cls: 'claudian-resume-group-header-label', text: label });
+    header.createSpan({ cls: 'claudian-resume-group-header-count', text: String(count) });
+  }
+
+  private renderItem(parent: HTMLElement, conv: ConversationMeta, index: number): void {
+    const isCurrent = conv.id === this.currentConversationId;
+
+    const item = parent.createDiv({ cls: 'claudian-resume-item' });
+    if (isCurrent) item.addClass('current');
+    if (index === this.selectedIndex) item.addClass('selected');
+
+    const external = isExternal(conv);
+    if (external) item.addClass('claudian-resume-item--external');
+    if (isArchived(conv)) item.addClass('claudian-resume-item--archived');
+
+    const iconEl = item.createDiv({ cls: 'claudian-resume-item-icon' });
+    setIcon(iconEl, isCurrent ? 'message-square-dot' : external ? 'terminal' : 'message-square');
+
+    const content = item.createDiv({ cls: 'claudian-resume-item-content' });
+    const titleRow = content.createDiv({ cls: 'claudian-resume-item-title-row' });
+    const titleEl = titleRow.createSpan({ cls: 'claudian-resume-item-title', text: conv.title });
+    titleEl.setAttribute('title', conv.title);
+    if (isArchived(conv)) {
+      titleRow.createSpan({ cls: 'claudian-resume-item-badge claudian-resume-item-badge--archived', text: 'ARCH' });
+    }
+    if (external) {
+      const badge = titleRow.createSpan({ cls: 'claudian-resume-item-badge', text: 'CLI' });
+      badge.title = `External session from ${(conv as ExternalConversationMeta).sourcePath}`;
+    }
+    content.createDiv({
+      cls: 'claudian-resume-item-date',
+      text: isCurrent ? 'Current session' : this.formatDate(conv.lastResponseAt ?? conv.updatedAt ?? conv.createdAt),
+    });
+
+    item.addEventListener('click', () => {
+      if (isCurrent) {
+        this.dismiss();
+        return;
+      }
+      this.callbacks.onSelect(conv.id);
+    });
+
+    item.addEventListener('mouseenter', () => {
+      this.selectedIndex = index;
+      this.updateSelection();
+    });
   }
 
   private formatDate(timestamp: number): string {

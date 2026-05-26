@@ -841,15 +841,18 @@ export default class ClaudianPlugin extends Plugin {
       if (!bySessionId.has(info.sessionId)) bySessionId.set(info.sessionId, info);
     }
 
-    // Sync native titles from JSONL (authoritative sources only: custom > ai).
-    // We intentionally skip `first-user` to avoid clobbering Claudian's own
-    // title-generation, manual renames, or `New conversation` placeholders.
+    // Sync native titles: Desktop metadata is authoritative, then JSONL custom
+    // / ai. Skip `first-user` to avoid clobbering Claudian's own title-gen,
+    // manual renames, or `New conversation` placeholders.
     const conversationsToSave: Conversation[] = [];
     for (const conv of this.conversations) {
       const lookupId = conv.sessionId ?? conv.id;
       const info = bySessionId.get(lookupId);
       if (!info) continue;
-      if (info.titleSource !== 'custom' && info.titleSource !== 'ai') continue;
+      const isAuthoritative = info.titleSource === 'desktop'
+        || info.titleSource === 'custom'
+        || info.titleSource === 'ai';
+      if (!isAuthoritative) continue;
       if (!info.title) continue;
       if (conv.title === info.title) continue;
       conv.title = info.title;
@@ -884,6 +887,8 @@ export default class ClaudianPlugin extends Plugin {
         preview: '',
         external: true,
         sourcePath: info.sourcePath,
+        chromeTabGroupId: info.chromeTabGroupId,
+        isArchived: info.isArchived,
       }));
 
     for (const listener of this.externalSessionListeners) {

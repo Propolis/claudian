@@ -110,6 +110,99 @@
   color: var(--text-on-accent);
 }
 
+/* Multi-selection fork: search bar at top of dropdown */
+.claudian-resume-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.claudian-resume-search-icon {
+  display: flex;
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+}
+
+.claudian-resume-search-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-resume-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-normal);
+  font-size: 13px;
+  padding: 2px 0;
+}
+
+.claudian-resume-search-input::placeholder {
+  color: var(--text-faint);
+}
+
+/* Multi-selection fork: archived toggle row */
+.claudian-resume-controls {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.claudian-resume-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.claudian-resume-toggle input[type="checkbox"] {
+  margin: 0;
+}
+
+/* Multi-selection fork: group section header */
+.claudian-resume-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.claudian-resume-list > .claudian-resume-group-header:first-child {
+  border-top: none;
+}
+
+.claudian-resume-group-header-count {
+  font-family: var(--font-monospace);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* Archived chip */
+.claudian-resume-item-badge--archived {
+  background: var(--background-modifier-error) !important;
+  color: var(--text-on-accent) !important;
+}
+
+.claudian-resume-item--archived {
+  opacity: 0.7;
+}
+
 .claudian-resume-list {
   max-height: 350px;
   overflow-y: auto;

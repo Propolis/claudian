@@ -18,6 +18,7 @@ import * as path from 'path';
 import { DEFAULT_CHAT_PROVIDER_ID } from '../../core/providers/types';
 import type { ConversationMeta } from '../../core/types';
 import { expandHomePath, getVaultPath } from '../../utils/path';
+import { loadDesktopSessionsIndex } from './DesktopSessionsIndex';
 
 const TITLE_MAX_LEN = 60;
 const SESSION_FILE_EXT = '.jsonl';
@@ -277,6 +278,10 @@ function stripXmlContextFromTitle(title: string): string {
 export interface ExternalConversationMeta extends ConversationMeta {
   external: true;
   sourcePath: string;
+  /** Chromium tab-group id from Desktop metadata. Null = ungrouped / not tracked by Desktop. */
+  chromeTabGroupId?: number | null;
+  /** True if Desktop has archived (soft-deleted) this chat. */
+  isArchived?: boolean;
 }
 
 /**
@@ -284,13 +289,24 @@ export interface ExternalConversationMeta extends ConversationMeta {
  * found across the configured paths (whether the session is also Claudian-native
  * or pure external). Lets the plugin sync native titles from JSONL and surface
  * external-only sessions in the resume dropdown in a single discovery pass.
+ *
+ * Title precedence (highest first):
+ *   1. Desktop metadata (`claude-code-sessions/.../local_*.json` → `title`)
+ *      — this is what the user sees in Claude Desktop, the canonical name.
+ *   2. JSONL `custom-title` entry (manual rename via CLI)
+ *   3. JSONL `ai-title` entry (SDK-generated)
+ *   4. First user message (best-effort fallback)
  */
 export interface JsonlSessionInfo {
   sessionId: string;
-  /** Title resolved per the custom > ai > first-user precedence. */
+  /** Title resolved per the precedence above. */
   title: string;
-  /** Where the title came from. `custom` / `ai` are authoritative (CLI / Desktop wrote them). */
-  titleSource: JsonlTitleSource;
+  /** Where the title came from. */
+  titleSource: 'desktop' | JsonlTitleSource;
+  /** Chromium tab-group id from Desktop, or null if ungrouped / not in index. */
+  chromeTabGroupId: number | null;
+  /** True if Desktop has soft-deleted (archived) this chat. */
+  isArchived: boolean;
   sourcePath: string;
   createdAt: number;
   updatedAt: number;
@@ -299,6 +315,10 @@ export interface JsonlSessionInfo {
 export function discoverAllJsonlSessions(opts: DiscoveryOptions): JsonlSessionInfo[] {
   const dirs = resolveScanPaths(opts);
   if (dirs.length === 0) return [];
+
+  // Load Desktop metadata index once per discovery pass — it's a few hundred KB
+  // total across 70-100 sessions on a typical user's machine.
+  const desktopIndex = loadDesktopSessionsIndex();
 
   const out: JsonlSessionInfo[] = [];
 
@@ -323,16 +343,29 @@ export function discoverAllJsonlSessions(opts: DiscoveryOptions): JsonlSessionIn
       if (!stat.isFile() || stat.size === 0) continue;
 
       const sessionId = name.slice(0, -SESSION_FILE_EXT.length);
-      const titleResult = extractTitleResultFromJsonl(filePath);
-      const cleanedTitle = stripXmlContextFromTitle(titleResult.title);
+      const desktopMeta = desktopIndex.get(sessionId);
+
+      // Desktop title wins. Fall back to JSONL parse if Desktop has nothing.
+      let title: string;
+      let titleSource: JsonlSessionInfo['titleSource'];
+      if (desktopMeta?.title) {
+        title = desktopMeta.title;
+        titleSource = 'desktop';
+      } else {
+        const fromJsonl = extractTitleResultFromJsonl(filePath);
+        title = stripXmlContextFromTitle(fromJsonl.title);
+        titleSource = fromJsonl.source;
+      }
 
       out.push({
         sessionId,
-        title: cleanedTitle,
-        titleSource: titleResult.source,
+        title,
+        titleSource,
+        chromeTabGroupId: desktopMeta?.chromeTabGroupId ?? null,
+        isArchived: desktopMeta?.isArchived ?? false,
         sourcePath: dir,
         createdAt: stat.birthtimeMs || stat.ctimeMs,
-        updatedAt: stat.mtimeMs,
+        updatedAt: desktopMeta?.lastActivityAt ?? stat.mtimeMs,
       });
     }
   }
@@ -357,6 +390,8 @@ export function discoverExternalSessions(opts: DiscoveryOptions): ExternalConver
     preview: '',
     external: true,
     sourcePath: info.sourcePath,
+    chromeTabGroupId: info.chromeTabGroupId,
+    isArchived: info.isArchived,
   }));
 }
 
