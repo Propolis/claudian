@@ -24,6 +24,9 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   scanAllProjectFolders: false,
   externalSessionPaths: [],
   refreshExternalSessionsOnFocus: true,
+  pinnedGroupIds: [],
+  groupOrder: [],
+  groupNames: {},
 
   sharedEnvironmentVariables: '',
   envSnippets: [],

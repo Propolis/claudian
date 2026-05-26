@@ -3,10 +3,18 @@ import { Menu, Notice, setIcon } from 'obsidian';
 import type { TitleGenerationService } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
 import type { ChatRewindMode } from '../../../core/runtime/types';
-import type { Conversation } from '../../../core/types';
+import type { Conversation, ConversationMeta } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
 import { confirm } from '../../../shared/modals/ConfirmModal';
+import {
+  computeGroupSections,
+  type GroupSection,
+  isArchived as conversationIsArchived,
+  moveGroup,
+  renameGroup,
+  togglePinned,
+} from '../../../utils/conversationGrouping';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import { cleanupThinkingBlock } from '../rendering/ThinkingBlockRenderer';
 import { findRewindContext } from '../rewind';
@@ -569,139 +577,323 @@ export class ConversationController {
     });
   }
 
+  // Multi-selection fork: ephemeral filter state for the history dropdown.
+  // Reset whenever the controller is constructed; preserved across re-renders
+  // while the dropdown is open.
+  private historySearchQuery = '';
+  private historyShowArchived = false;
+
   /**
    * Renders history dropdown items to a container.
    * Shared implementation for updateHistoryDropdown() and renderHistoryDropdown().
+   *
+   * Multi-selection fork: adds search input, archive toggle, and group sections
+   * (pinned → ordered → ungrouped) above the flat list. Group headers carry
+   * pin / move / rename controls.
    */
   private renderHistoryItems(
     container: HTMLElement,
     options: HistoryRenderOptions
   ): void {
-    const { plugin, state } = this.deps;
+    const { plugin } = this.deps;
 
     container.empty();
 
     const dropdownHeader = container.createDiv({ cls: 'claudian-history-header' });
     dropdownHeader.createSpan({ text: 'Conversations' });
 
-    const list = container.createDiv({ cls: 'claudian-history-list' });
     const allConversations = plugin.getConversationList();
-
     if (allConversations.length === 0) {
-      list.createDiv({ cls: 'claudian-history-empty', text: 'No conversations' });
+      container.createDiv({ cls: 'claudian-history-empty', text: 'No conversations' });
       return;
     }
 
-    // Sort by lastResponseAt (fallback to createdAt) descending
-    const conversations = [...allConversations].sort((a, b) => {
-      return (b.lastResponseAt ?? b.createdAt) - (a.lastResponseAt ?? a.createdAt);
+    // Sort by lastResponseAt (fallback to updatedAt then createdAt) descending.
+    const sorted = [...allConversations].sort((a, b) => {
+      return (b.lastResponseAt ?? b.updatedAt ?? b.createdAt)
+        - (a.lastResponseAt ?? a.updatedAt ?? a.createdAt);
     });
 
-    for (const conv of conversations) {
-      const isCurrent = conv.id === state.currentConversationId;
-      const item = list.createDiv({
-        cls: `claudian-history-item${isCurrent ? ' active' : ''}`,
+    this.renderHistorySearch(container, options);
+    this.renderHistoryArchiveToggle(container, sorted, options);
+
+    const sections = computeGroupSections(sorted, {
+      pinnedGroupIds: plugin.settings.pinnedGroupIds,
+      groupOrder: plugin.settings.groupOrder,
+      groupNames: plugin.settings.groupNames,
+    }, {
+      searchQuery: this.historySearchQuery,
+      showArchived: this.historyShowArchived,
+    });
+
+    const totalVisible = sections.reduce((acc, s) => acc + s.items.length, 0);
+    if (totalVisible === 0) {
+      container.createDiv({
+        cls: 'claudian-history-empty',
+        text: this.historySearchQuery ? 'No matches' : 'No conversations',
       });
+      return;
+    }
 
-      const iconEl = item.createDiv({ cls: 'claudian-history-item-icon' });
-      setIcon(iconEl, isCurrent ? 'message-square-dot' : 'message-square');
+    const list = container.createDiv({ cls: 'claudian-history-list' });
 
-      const content = item.createDiv({ cls: 'claudian-history-item-content' });
-      const titleEl = content.createDiv({ cls: 'claudian-history-item-title', text: conv.title });
-      titleEl.setAttribute('title', conv.title);
-      content.createDiv({
-        cls: 'claudian-history-item-date',
-        text: isCurrent ? 'Current session' : this.formatDate(conv.lastResponseAt ?? conv.createdAt),
-      });
+    for (const section of sections) {
+      this.renderHistoryGroupHeader(list, section, options, container);
+      for (const conv of section.items) {
+        this.renderHistoryItem(list, conv, options);
+      }
+    }
+  }
 
-      if (!isCurrent) {
-        content.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (this.isHistoryNewTabModifierClick(e) && options.onOpenConversationInNewTab) {
-            e.preventDefault();
-            runConversationAction(
-              () => this.runHistoryAction(
-                () => options.onOpenConversationInNewTab?.(conv.id, true),
-                'Failed to load conversation',
-              ),
-              'Failed to load conversation',
-            );
-            return;
-          }
+  private renderHistorySearch(container: HTMLElement, options: HistoryRenderOptions): void {
+    const wrap = container.createDiv({ cls: 'claudian-history-search' });
+    const iconEl = wrap.createDiv({ cls: 'claudian-history-search-icon' });
+    setIcon(iconEl, 'search');
+    const input = wrap.createEl('input', {
+      cls: 'claudian-history-search-input',
+      attr: { type: 'text', placeholder: 'Search chats…', spellcheck: 'false' },
+    });
+    input.value = this.historySearchQuery;
+    input.addEventListener('input', () => {
+      this.historySearchQuery = input.value;
+      this.renderHistoryItems(container, options);
+      // Restore focus + caret to end after re-render.
+      const restored = container.querySelector('.claudian-history-search-input') as HTMLInputElement | null;
+      if (restored) {
+        restored.focus();
+        const v = restored.value;
+        restored.setSelectionRange(v.length, v.length);
+      }
+    });
+    input.addEventListener('click', (e) => e.stopPropagation());
+    window.setTimeout(() => input.focus(), 0);
+  }
 
+  private renderHistoryArchiveToggle(
+    container: HTMLElement,
+    conversations: ConversationMeta[],
+    options: HistoryRenderOptions,
+  ): void {
+    const archivedCount = conversations.filter(conversationIsArchived).length;
+    if (archivedCount === 0) return;
+
+    const wrap = container.createDiv({ cls: 'claudian-history-controls' });
+    const toggle = wrap.createEl('label', { cls: 'claudian-history-toggle' });
+    const cb = toggle.createEl('input', { attr: { type: 'checkbox' } });
+    cb.checked = this.historyShowArchived;
+    toggle.createSpan({ text: `Show archived (${archivedCount})` });
+    cb.addEventListener('change', () => {
+      this.historyShowArchived = cb.checked;
+      this.renderHistoryItems(container, options);
+    });
+  }
+
+  private renderHistoryGroupHeader(
+    parent: HTMLElement,
+    section: GroupSection,
+    options: HistoryRenderOptions,
+    container: HTMLElement,
+  ): void {
+    const { plugin } = this.deps;
+    const header = parent.createDiv({ cls: 'claudian-history-group-header' });
+    if (section.pinned) header.addClass('pinned');
+
+    const label = header.createSpan({ cls: 'claudian-history-group-label', text: section.name });
+    label.title = `${section.name} · ${section.items.length}`;
+    header.createSpan({ cls: 'claudian-history-group-count', text: String(section.items.length) });
+
+    // Real group only (not Ungrouped) gets the controls.
+    if (section.groupId === null) return;
+
+    const groupId = section.groupId;
+    const actions = header.createDiv({ cls: 'claudian-history-group-actions' });
+
+    const pinBtn = actions.createEl('button', {
+      cls: 'claudian-history-group-action' + (section.pinned ? ' active' : ''),
+      attr: { type: 'button', 'aria-label': section.pinned ? 'Unpin group' : 'Pin group' },
+    });
+    pinBtn.title = section.pinned ? 'Unpin group' : 'Pin group';
+    setIcon(pinBtn, section.pinned ? 'pin-off' : 'pin');
+    pinBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      plugin.settings = togglePinned(plugin.settings, groupId) as typeof plugin.settings;
+      void plugin.saveSettings();
+      this.renderHistoryItems(container, options);
+    });
+
+    const upBtn = actions.createEl('button', {
+      cls: 'claudian-history-group-action',
+      attr: { type: 'button', 'aria-label': 'Move group up' },
+    });
+    upBtn.title = 'Move up';
+    setIcon(upBtn, 'chevron-up');
+    upBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      plugin.settings = moveGroup(plugin.settings, groupId, 'up') as typeof plugin.settings;
+      void plugin.saveSettings();
+      this.renderHistoryItems(container, options);
+    });
+
+    const downBtn = actions.createEl('button', {
+      cls: 'claudian-history-group-action',
+      attr: { type: 'button', 'aria-label': 'Move group down' },
+    });
+    downBtn.title = 'Move down';
+    setIcon(downBtn, 'chevron-down');
+    downBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      plugin.settings = moveGroup(plugin.settings, groupId, 'down') as typeof plugin.settings;
+      void plugin.saveSettings();
+      this.renderHistoryItems(container, options);
+    });
+
+    const renameBtn = actions.createEl('button', {
+      cls: 'claudian-history-group-action',
+      attr: { type: 'button', 'aria-label': 'Rename group' },
+    });
+    renameBtn.title = 'Rename group';
+    setIcon(renameBtn, 'pencil');
+    renameBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.promptRenameGroup(groupId, section.name, container, options);
+    });
+  }
+
+  private promptRenameGroup(
+    groupId: number,
+    currentName: string,
+    container: HTMLElement,
+    options: HistoryRenderOptions,
+  ): void {
+    const { plugin } = this.deps;
+    // Lightweight prompt — Obsidian's standard `window.prompt` works fine.
+    const next = window.prompt('Group name', currentName.startsWith('Group ') ? '' : currentName);
+    if (next === null) return; // cancelled
+    plugin.settings = renameGroup(plugin.settings, groupId, next) as typeof plugin.settings;
+    void plugin.saveSettings();
+    this.renderHistoryItems(container, options);
+  }
+
+  private renderHistoryItem(
+    list: HTMLElement,
+    conv: ConversationMeta,
+    options: HistoryRenderOptions,
+  ): void {
+    const { state } = this.deps;
+    const isCurrent = conv.id === state.currentConversationId;
+    const item = list.createDiv({
+      cls: `claudian-history-item${isCurrent ? ' active' : ''}`,
+    });
+    if (conversationIsArchived(conv)) item.addClass('claudian-history-item--archived');
+
+    // Continue with original per-item rendering inline (was a `for` body above).
+    this.renderHistoryItemBody(item, conv, isCurrent, options);
+  }
+
+  private renderHistoryItemBody(
+    item: HTMLElement,
+    conv: ConversationMeta,
+    isCurrent: boolean,
+    options: HistoryRenderOptions,
+  ): void {
+    const iconEl = item.createDiv({ cls: 'claudian-history-item-icon' });
+    setIcon(iconEl, isCurrent ? 'message-square-dot' : 'message-square');
+
+    const content = item.createDiv({ cls: 'claudian-history-item-content' });
+    const titleEl = content.createDiv({ cls: 'claudian-history-item-title', text: conv.title });
+    titleEl.setAttribute('title', conv.title);
+    content.createDiv({
+      cls: 'claudian-history-item-date',
+      text: isCurrent ? 'Current session' : this.formatDate(conv.lastResponseAt ?? conv.updatedAt ?? conv.createdAt),
+    });
+
+    if (!isCurrent) {
+      content.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (this.isHistoryNewTabModifierClick(e) && options.onOpenConversationInNewTab) {
+          e.preventDefault();
           runConversationAction(
             () => this.runHistoryAction(
-              () => options.onSelectConversation(conv.id),
+              () => options.onOpenConversationInNewTab?.(conv.id, true),
+              'Failed to load conversation',
+            ),
+            'Failed to load conversation',
+          );
+          return;
+        }
+
+        runConversationAction(
+          () => this.runHistoryAction(
+            () => options.onSelectConversation(conv.id),
+            'Failed to load conversation',
+          ),
+          'Failed to load conversation',
+        );
+      });
+
+      if (options.onOpenConversationInNewTab) {
+        content.addEventListener('auxclick', (e) => {
+          if (e.button !== 1) return;
+          e.preventDefault();
+          e.stopPropagation();
+          runConversationAction(
+            () => this.runHistoryAction(
+              () => options.onOpenConversationInNewTab?.(conv.id, true),
               'Failed to load conversation',
             ),
             'Failed to load conversation',
           );
         });
-
-        if (options.onOpenConversationInNewTab) {
-          content.addEventListener('auxclick', (e) => {
-            if (e.button !== 1) return;
-            e.preventDefault();
-            e.stopPropagation();
-            runConversationAction(
-              () => this.runHistoryAction(
-                () => options.onOpenConversationInNewTab?.(conv.id, true),
-                'Failed to load conversation',
-              ),
-              'Failed to load conversation',
-            );
-          });
-        }
       }
+    }
 
-      item.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.showHistoryContextMenu(item, conv.id, conv.title, isCurrent, options, e);
-      });
+    item.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.showHistoryContextMenu(item, conv.id, conv.title, isCurrent, options, e);
+    });
 
-      const actions = item.createDiv({ cls: 'claudian-history-item-actions' });
+    const actions = item.createDiv({ cls: 'claudian-history-item-actions' });
 
-      // Show regenerate button if title generation failed, or loading indicator if pending
-      if (conv.titleGenerationStatus === 'pending') {
-        const loadingEl = actions.createEl('span', { cls: 'claudian-action-btn claudian-action-loading' });
-        setIcon(loadingEl, 'loader-2');
-        loadingEl.setAttribute('aria-label', 'Generating title...');
-      } else if (conv.titleGenerationStatus === 'failed') {
-        const regenerateBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
-        setIcon(regenerateBtn, 'refresh-cw');
-        regenerateBtn.setAttribute('aria-label', 'Regenerate title');
-        regenerateBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          runConversationAction(
-            () => this.regenerateTitle(conv.id),
-            'Failed to regenerate response',
-          );
-        });
-      }
-
-      const renameBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
-      setIcon(renameBtn, 'pencil');
-      renameBtn.setAttribute('aria-label', 'Rename');
-      renameBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.showRenameInput(item, conv.id, conv.title);
-      });
-
-      const deleteBtn = actions.createEl('button', { cls: 'claudian-action-btn claudian-delete-btn' });
-      setIcon(deleteBtn, 'trash-2');
-      deleteBtn.setAttribute('aria-label', 'Delete');
-      deleteBtn.addEventListener('click', (e) => {
+    // Show regenerate button if title generation failed, or loading indicator if pending
+    if (conv.titleGenerationStatus === 'pending') {
+      const loadingEl = actions.createEl('span', { cls: 'claudian-action-btn claudian-action-loading' });
+      setIcon(loadingEl, 'loader-2');
+      loadingEl.setAttribute('aria-label', 'Generating title...');
+    } else if (conv.titleGenerationStatus === 'failed') {
+      const regenerateBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
+      setIcon(regenerateBtn, 'refresh-cw');
+      regenerateBtn.setAttribute('aria-label', 'Regenerate title');
+      regenerateBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         runConversationAction(
-          () => this.runHistoryAction(
-            () => this.deleteHistoryConversation(conv.id, options),
-            'Failed to delete conversation',
-          ),
-          'Failed to delete conversation',
+          () => this.regenerateTitle(conv.id),
+          'Failed to regenerate response',
         );
       });
     }
+
+    const renameBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
+    setIcon(renameBtn, 'pencil');
+    renameBtn.setAttribute('aria-label', 'Rename');
+    renameBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.showRenameInput(item, conv.id, conv.title);
+    });
+
+    const deleteBtn = actions.createEl('button', { cls: 'claudian-action-btn claudian-delete-btn' });
+    setIcon(deleteBtn, 'trash-2');
+    deleteBtn.setAttribute('aria-label', 'Delete');
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      runConversationAction(
+        () => this.runHistoryAction(
+          () => this.deleteHistoryConversation(conv.id, options),
+          'Failed to delete conversation',
+        ),
+        'Failed to delete conversation',
+      );
+    });
   }
 
   private isHistoryNewTabModifierClick(event: MouseEvent): boolean {
