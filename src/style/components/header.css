@@ -29,6 +29,32 @@
   font-weight: 600;
 }
 
+/* Multi-selection fork: active conversation title next to brand */
+.claudian-active-chat-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 13px;
+  color: var(--text-normal);
+  overflow: hidden;
+}
+
+.claudian-active-chat-title-sep {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.claudian-active-chat-title-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+}
+
 .claudian-logo {
   display: flex;
   align-items: center;

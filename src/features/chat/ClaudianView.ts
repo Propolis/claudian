@@ -41,6 +41,8 @@ export class ClaudianView extends ItemView {
   private titleSlotEl: HTMLElement | null = null;
   private logoEl: HTMLElement | null = null;
   private titleTextEl: HTMLElement | null = null;
+  /** Multi-selection fork: active conversation title shown next to brand. */
+  private activeChatTitleEl: HTMLElement | null = null;
   private headerActionsEl: HTMLElement | null = null;
   private headerActionsContent: HTMLElement | null = null;
   private newTabButtonEl: HTMLElement | null = null;
@@ -184,6 +186,7 @@ export class ClaudianView extends ItemView {
           this.updateNavRowLocation();
           this.persistTabState();
           this.syncProviderBrandColor();
+          this.updateActiveChatTitle();
         },
         onTabSwitched: () => {
           this.updateTabBar();
@@ -191,18 +194,28 @@ export class ClaudianView extends ItemView {
           this.updateNavRowLocation();
           this.persistTabState();
           this.syncProviderBrandColor();
+          this.updateActiveChatTitle();
         },
         onTabClosed: () => {
           this.updateTabBar();
           this.persistTabState();
+          this.updateActiveChatTitle();
         },
-        onTabStreamingChanged: () => this.updateTabBar(),
-        onTabTitleChanged: () => this.updateTabBar(),
+        onTabStreamingChanged: () => {
+          this.updateTabBar();
+          // Multi-selection fork: title may have been generated after stream end.
+          this.updateActiveChatTitle();
+        },
+        onTabTitleChanged: () => {
+          this.updateTabBar();
+          this.updateActiveChatTitle();
+        },
         onTabAttentionChanged: () => this.updateTabBar(),
         onTabConversationChanged: () => {
           this.updateTabBar();
           this.persistTabState();
           this.syncProviderBrandColor();
+          this.updateActiveChatTitle();
         },
         onTabProviderChanged: () => {
           this.updateTabBar();
@@ -256,8 +269,39 @@ export class ClaudianView extends ItemView {
     // Title text (hidden in header mode when 2+ tabs)
     this.titleTextEl = this.titleSlotEl.createEl('h4', { text: 'Claudian', cls: 'claudian-title-text' });
 
+    // Multi-selection fork: active conversation title rendered next to the brand.
+    this.activeChatTitleEl = this.titleSlotEl.createSpan({ cls: 'claudian-active-chat-title claudian-hidden' });
+
     // Header actions container (for header mode - initially hidden)
     this.headerActionsEl = header.createDiv({ cls: 'claudian-header-actions claudian-header-actions-slot claudian-hidden' });
+  }
+
+  /**
+   * Multi-selection fork: refreshes the active conversation title shown in the
+   * header. Called on tab switch, conversation switch, or title generation
+   * completion. Hidden when there's no active conversation.
+   */
+  private updateActiveChatTitle(): void {
+    if (!this.activeChatTitleEl) return;
+    const tab = this.tabManager?.getActiveTab();
+    const conversationId = tab?.state.currentConversationId;
+    if (!conversationId) {
+      this.activeChatTitleEl.empty();
+      this.activeChatTitleEl.addClass('claudian-hidden');
+      return;
+    }
+    const meta = this.plugin.getConversationList().find((c) => c.id === conversationId);
+    const title = meta?.title?.trim();
+    if (!title) {
+      this.activeChatTitleEl.empty();
+      this.activeChatTitleEl.addClass('claudian-hidden');
+      return;
+    }
+    this.activeChatTitleEl.empty();
+    this.activeChatTitleEl.createSpan({ cls: 'claudian-active-chat-title-sep', text: '—' });
+    this.activeChatTitleEl.createSpan({ cls: 'claudian-active-chat-title-text', text: title });
+    this.activeChatTitleEl.removeClass('claudian-hidden');
+    this.activeChatTitleEl.title = title;
   }
 
   /**
