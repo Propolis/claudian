@@ -2,13 +2,21 @@
 import { patchSetMaxListenersForElectron } from './utils/electronCompat';
 patchSetMaxListenersForElectron();
 
+// Multi-selection fork: tag Claudian SDK sessions as "claude-desktop" so they
+// show up in Claude Desktop's chat list alongside CLI sessions. The SDK reads
+// process.env.CLAUDE_CODE_ENTRYPOINT when writing JSONL entries — must be set
+// before any SDK module initializes.
+if (!process.env.CLAUDE_CODE_ENTRYPOINT) {
+  process.env.CLAUDE_CODE_ENTRYPOINT = 'claude-desktop';
+}
+
 import './providers';
 
 import type { Editor, WorkspaceLeaf } from 'obsidian';
 import { MarkdownView, Notice, Plugin } from 'obsidian';
 
 import {
-  discoverExternalSessions,
+  discoverAllJsonlSessions,
   type ExternalConversationMeta,
 } from './app/services/ExternalSessionsDiscovery';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
@@ -810,16 +818,73 @@ export default class ClaudianPlugin extends Plugin {
 
   /**
    * Multi-selection fork: rescan all configured external session paths.
-   * Fires registered listeners on completion. Safe to call frequently —
-   * disk I/O is bounded to readdir + 16KB per file.
+   * Two effects:
+   *   1. Sync native conversation titles from JSONL when a custom-title or
+   *      ai-title is present and differs from the cached native title.
+   *   2. Rebuild the in-memory list of external (JSONL-only) sessions for
+   *      the resume dropdown.
+   * Fires registered listeners on completion.
    */
   refreshExternalSessions(): void {
     const settings = this.settings;
-    this.externalConversations = discoverExternalSessions({
+    const allFound = discoverAllJsonlSessions({
       app: this.app,
       includeVaultCliSessions: settings.includeVaultCliSessions ?? true,
       externalSessionPaths: settings.externalSessionPaths ?? [],
     });
+
+    // Index by sessionId for fast lookup.
+    const bySessionId = new Map<string, typeof allFound[number]>();
+    for (const info of allFound) {
+      // Last write wins (allFound is sorted desc by updatedAt; we want the most recent).
+      if (!bySessionId.has(info.sessionId)) bySessionId.set(info.sessionId, info);
+    }
+
+    // Sync native titles from JSONL (authoritative sources only: custom > ai).
+    // We intentionally skip `first-user` to avoid clobbering Claudian's own
+    // title-generation, manual renames, or `New conversation` placeholders.
+    const conversationsToSave: Conversation[] = [];
+    for (const conv of this.conversations) {
+      const lookupId = conv.sessionId ?? conv.id;
+      const info = bySessionId.get(lookupId);
+      if (!info) continue;
+      if (info.titleSource !== 'custom' && info.titleSource !== 'ai') continue;
+      if (!info.title) continue;
+      if (conv.title === info.title) continue;
+      conv.title = info.title;
+      conv.updatedAt = Date.now();
+      conversationsToSave.push(conv);
+    }
+
+    // Persist updated titles asynchronously — don't block the refresh callback.
+    if (conversationsToSave.length > 0) {
+      void Promise.all(conversationsToSave.map((conv) =>
+        this.storage.sessions.saveMetadata(this.storage.sessions.toSessionMetadata(conv))
+      )).catch(() => { /* persistence failure is non-fatal */ });
+    }
+
+    // Rebuild external list: anything in JSONL that isn't already native.
+    const nativeIds = new Set<string>();
+    const nativeSessionIds = new Set<string>();
+    for (const c of this.conversations) {
+      nativeIds.add(c.id);
+      if (c.sessionId) nativeSessionIds.add(c.sessionId);
+    }
+
+    this.externalConversations = allFound
+      .filter((info) => !nativeIds.has(info.sessionId) && !nativeSessionIds.has(info.sessionId))
+      .map((info) => ({
+        id: info.sessionId,
+        providerId: DEFAULT_CHAT_PROVIDER_ID,
+        title: info.title || `External session ${info.sessionId.slice(0, 8)}`,
+        createdAt: info.createdAt,
+        updatedAt: info.updatedAt,
+        messageCount: 0,
+        preview: '',
+        external: true,
+        sourcePath: info.sourcePath,
+      }));
+
     for (const listener of this.externalSessionListeners) {
       try { listener(); } catch { /* swallow */ }
     }

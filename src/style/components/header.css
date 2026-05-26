@@ -29,13 +29,17 @@
   font-weight: 600;
 }
 
-/* Multi-selection fork: active conversation title next to brand */
+/* Multi-selection fork: active conversation title next to brand. Uses
+ * `flex: 1 1 0` with explicit `min-width: 0` so it shrinks below content
+ * size when needed (otherwise children would prevent ellipsis) and grows
+ * to fill the entire remaining row width between the brand and the
+ * header-actions slot. */
 .claudian-active-chat-title {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1 1 0;
   min-width: 0;
-  flex: 1 1 auto;
   font-size: 13px;
   color: var(--text-normal);
   overflow: hidden;
@@ -47,8 +51,9 @@
 }
 
 .claudian-active-chat-title-text {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

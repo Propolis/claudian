@@ -225,6 +225,14 @@ export class ClaudianView extends ItemView {
     );
 
     this.wireEventHandlers();
+
+    // Multi-selection fork: re-render the header title whenever the plugin
+    // refreshes external sessions (which may have synced a new title from
+    // the JSONL into the active conversation's meta.json).
+    const unsubExternal = this.plugin.onExternalSessionsChanged(() => {
+      this.updateActiveChatTitle();
+    });
+    this.register(unsubExternal);
     await this.restoreOrCreateTabs();
     this.syncProviderBrandColor();
     this.updateLayoutForPosition();
@@ -299,7 +307,11 @@ export class ClaudianView extends ItemView {
     }
     this.activeChatTitleEl.empty();
     this.activeChatTitleEl.createSpan({ cls: 'claudian-active-chat-title-sep', text: '—' });
-    this.activeChatTitleEl.createSpan({ cls: 'claudian-active-chat-title-text', text: title });
+    const textEl = this.activeChatTitleEl.createSpan({ cls: 'claudian-active-chat-title-text', text: title });
+    // Tooltip on the inner text element — that's the one users hover on the
+    // visible truncated text. Setting it on the parent only works on the
+    // separator dash region.
+    textEl.title = title;
     this.activeChatTitleEl.removeClass('claudian-hidden');
     this.activeChatTitleEl.title = title;
   }

@@ -88,6 +88,18 @@ function resolveScanPaths(opts: DiscoveryOptions): string[] {
 }
 
 /**
+ * Source of a JSONL session title, in precedence order.
+ * `custom` and `ai` are authoritative (CLI / Desktop wrote them); the fallback
+ * `first-user` is a guess that should NOT overwrite native Claudian titles.
+ */
+export type JsonlTitleSource = 'custom' | 'ai' | 'first-user' | 'none';
+
+export interface JsonlTitleResult {
+  title: string;
+  source: JsonlTitleSource;
+}
+
+/**
  * Extracts the chat title from a JSONL session file using the same precedence
  * as the Claude Code desktop app / CLI:
  *
@@ -102,12 +114,12 @@ function resolveScanPaths(opts: DiscoveryOptions): string[] {
  * but parsing line-by-line is fast (~10-50ms even for 4MB). Cheap substring
  * pre-filter skips JSON.parse for lines that aren't title entries.
  */
-function extractTitleFromJsonl(filePath: string): string {
+function extractTitleResultFromJsonl(filePath: string): JsonlTitleResult {
   let content: string;
   try {
     content = fs.readFileSync(filePath, 'utf8');
   } catch {
-    return '';
+    return { title: '', source: 'none' };
   }
 
   let customTitle = '';
@@ -149,12 +161,32 @@ function extractTitleFromJsonl(filePath: string): string {
     }
   }
 
-  const chosen = customTitle || aiTitle || firstUserMessage;
-  if (!chosen) return '';
+  let source: JsonlTitleSource;
+  let chosen: string;
+  if (customTitle) {
+    chosen = customTitle;
+    source = 'custom';
+  } else if (aiTitle) {
+    chosen = aiTitle;
+    source = 'ai';
+  } else if (firstUserMessage) {
+    chosen = firstUserMessage;
+    source = 'first-user';
+  } else {
+    return { title: '', source: 'none' };
+  }
 
   const flat = chosen.replace(/\s+/g, ' ').trim();
-  if (flat.length <= TITLE_MAX_LEN) return flat;
-  return flat.slice(0, TITLE_MAX_LEN - 1).trimEnd() + '…';
+  if (!flat) return { title: '', source: 'none' };
+  const title = flat.length <= TITLE_MAX_LEN
+    ? flat
+    : flat.slice(0, TITLE_MAX_LEN - 1).trimEnd() + '…';
+  return { title, source };
+}
+
+/** Back-compat wrapper for callers that only need the string. */
+function extractTitleFromJsonl(filePath: string): string {
+  return extractTitleResultFromJsonl(filePath).title;
 }
 
 /**
@@ -226,11 +258,28 @@ export interface ExternalConversationMeta extends ConversationMeta {
   sourcePath: string;
 }
 
-export function discoverExternalSessions(opts: DiscoveryOptions): ExternalConversationMeta[] {
+/**
+ * Multi-selection fork: full JSONL session info — emitted for EVERY .jsonl
+ * found across the configured paths (whether the session is also Claudian-native
+ * or pure external). Lets the plugin sync native titles from JSONL and surface
+ * external-only sessions in the resume dropdown in a single discovery pass.
+ */
+export interface JsonlSessionInfo {
+  sessionId: string;
+  /** Title resolved per the custom > ai > first-user precedence. */
+  title: string;
+  /** Where the title came from. `custom` / `ai` are authoritative (CLI / Desktop wrote them). */
+  titleSource: JsonlTitleSource;
+  sourcePath: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export function discoverAllJsonlSessions(opts: DiscoveryOptions): JsonlSessionInfo[] {
   const dirs = resolveScanPaths(opts);
   if (dirs.length === 0) return [];
 
-  const out: ExternalConversationMeta[] = [];
+  const out: JsonlSessionInfo[] = [];
 
   for (const dir of dirs) {
     let entries: string[];
@@ -253,27 +302,41 @@ export function discoverExternalSessions(opts: DiscoveryOptions): ExternalConver
       if (!stat.isFile() || stat.size === 0) continue;
 
       const sessionId = name.slice(0, -SESSION_FILE_EXT.length);
-      const rawTitle = extractTitleFromJsonl(filePath);
-      const cleanedTitle = stripXmlContextFromTitle(rawTitle);
-      const title = cleanedTitle || `External session ${sessionId.slice(0, 8)}`;
+      const titleResult = extractTitleResultFromJsonl(filePath);
+      const cleanedTitle = stripXmlContextFromTitle(titleResult.title);
 
       out.push({
-        id: sessionId,
-        providerId: DEFAULT_CHAT_PROVIDER_ID,
-        title,
+        sessionId,
+        title: cleanedTitle,
+        titleSource: titleResult.source,
+        sourcePath: dir,
         createdAt: stat.birthtimeMs || stat.ctimeMs,
         updatedAt: stat.mtimeMs,
-        messageCount: 0, // Unknown without full parse; the UI may show "—".
-        preview: '',
-        external: true,
-        sourcePath: dir,
       });
     }
   }
 
-  // Newest first.
   out.sort((a, b) => b.updatedAt - a.updatedAt);
   return out;
+}
+
+/**
+ * Convenience wrapper: returns only entries suitable for the resume dropdown's
+ * external slot. Caller should still call discoverAllJsonlSessions if it wants
+ * to sync native titles.
+ */
+export function discoverExternalSessions(opts: DiscoveryOptions): ExternalConversationMeta[] {
+  return discoverAllJsonlSessions(opts).map((info) => ({
+    id: info.sessionId,
+    providerId: DEFAULT_CHAT_PROVIDER_ID,
+    title: info.title || `External session ${info.sessionId.slice(0, 8)}`,
+    createdAt: info.createdAt,
+    updatedAt: info.updatedAt,
+    messageCount: 0,
+    preview: '',
+    external: true,
+    sourcePath: info.sourcePath,
+  }));
 }
 
 /** Same hash function as Claude Code CLI — exported for the settings UI to suggest paths. */
