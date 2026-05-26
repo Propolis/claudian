@@ -32,20 +32,22 @@ interface DiscoveryOptions {
 }
 
 /**
- * Mirrors Claude Code CLI's project-hash convention: replace forward slashes,
- * dots, etc. with dashes, prefix with a single dash.
+ * Mirrors Claude Code CLI's project-hash convention: collapse every run of
+ * non-alphanumeric characters into a single dash. The leading `/` of an
+ * absolute path becomes the leading `-`.
  *
- *   /Users/maksim/Library/.../Documents
- *     → -Users-maksim-Library-...-Documents
+ *   /Users/maksim/Library/Mobile Documents/iCloud~md~obsidian/Documents
+ *     → -Users-maksim-Library-Mobile-Documents-iCloud-md-obsidian-Documents
  *
- * Verified empirically against the user's existing
- * `~/.claude/projects/-Users-maksim-Library-Mobile-Documents-iCloud-md-obsidian-Documents`.
+ * Important: must handle spaces (e.g. "Mobile Documents"), dots, tildes,
+ * underscores — anything not alphanumeric. Verified against the user's
+ * existing `~/.claude/projects/-Users-maksim-Library-Mobile-Documents-...-Documents`.
  */
 function pathToProjectHash(absolutePath: string): string {
   const normalized = absolutePath.replace(/\\/g, '/');
-  return '-' + normalized
-    .replace(/^\/+/, '')
-    .replace(/[/.~_]/g, '-');
+  return normalized
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/-$/, '');
 }
 
 function getVaultCliProjectsDir(app: App): string | null {
