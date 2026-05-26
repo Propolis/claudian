@@ -22,6 +22,9 @@
 }
 
 .claudian-resume-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 600;
@@ -29,6 +32,82 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.claudian-resume-header-title {
+  flex: 1 1 auto;
+}
+
+/* Multi-selection fork: refresh button in dropdown header */
+.claudian-resume-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  flex: 0 0 auto;
+}
+
+.claudian-resume-refresh:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-resume-refresh svg {
+  width: 13px;
+  height: 13px;
+}
+
+.claudian-resume-refresh--spinning svg {
+  animation: claudian-resume-spin 600ms linear;
+}
+
+@keyframes claudian-resume-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Multi-selection fork: title row + CLI badge for external sessions */
+.claudian-resume-item-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.claudian-resume-item-title-row .claudian-resume-item-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.claudian-resume-item-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-family: var(--font-monospace);
+}
+
+.claudian-resume-item--external .claudian-resume-item-badge {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
 }
 
 .claudian-resume-list {

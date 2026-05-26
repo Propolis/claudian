@@ -251,3 +251,23 @@
   outline: 1px solid var(--interactive-accent);
   border-color: var(--interactive-accent);
 }
+
+/* ============================================
+ * External session paths settings UI
+ * ============================================ */
+
+.claudian-external-session-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.claudian-external-session-path-row {
+  flex: 1 1 auto;
+  gap: 8px;
+}
+
+.claudian-external-session-path-input {
+  width: 100%;
+  font-family: var(--font-monospace);
+}

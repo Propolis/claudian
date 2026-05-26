@@ -7,6 +7,10 @@ import './providers';
 import type { Editor, WorkspaceLeaf } from 'obsidian';
 import { MarkdownView, Notice, Plugin } from 'obsidian';
 
+import {
+  discoverExternalSessions,
+  type ExternalConversationMeta,
+} from './app/services/ExternalSessionsDiscovery';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
 import { SharedStorageService } from './app/storage/SharedStorageService';
 import type { SharedAppStorage } from './core/bootstrap/storage';
@@ -51,6 +55,10 @@ export default class ClaudianPlugin extends Plugin {
   storage!: SharedAppStorage;
   private conversations: Conversation[] = [];
   private lastKnownTabManagerState: AppTabManagerState | null = null;
+  /** Multi-selection fork: in-memory external CLI sessions, refreshed via refreshExternalSessions(). */
+  private externalConversations: ExternalConversationMeta[] = [];
+  /** Multi-selection fork: subscribers notified after refreshExternalSessions(). */
+  private externalSessionListeners: Set<() => void> = new Set();
 
   async onload() {
     await this.loadSettings();
@@ -175,6 +183,35 @@ export default class ClaudianPlugin extends Plugin {
     });
 
     this.addSettingTab(new ClaudianSettingTab(this.app, this));
+
+    // Multi-selection fork: initial scan of external CLI sessions + manual command.
+    this.refreshExternalSessions();
+
+    this.addCommand({
+      id: 'refresh-external-sessions',
+      name: 'Refresh external sessions',
+      callback: () => {
+        this.refreshExternalSessions();
+        new Notice(`Found ${this.externalConversations.length} external session(s)`);
+      },
+    });
+
+    // Multi-selection fork: auto-rescan on window focus so new CLI sessions
+    // appear without a manual click. Debounced inside the handler.
+    let focusDebounce: number | null = null;
+    const focusHandler = () => {
+      if (!this.settings.refreshExternalSessionsOnFocus) return;
+      if (focusDebounce !== null) window.clearTimeout(focusDebounce);
+      focusDebounce = window.setTimeout(() => {
+        focusDebounce = null;
+        this.refreshExternalSessions();
+      }, 500);
+    };
+    window.addEventListener('focus', focusHandler);
+    this.register(() => {
+      window.removeEventListener('focus', focusHandler);
+      if (focusDebounce !== null) window.clearTimeout(focusDebounce);
+    });
   }
 
   onunload(): void {
@@ -622,11 +659,32 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   async switchConversation(id: string): Promise<Conversation | null> {
-    const conversation = this.conversations.find(c => c.id === id);
+    let conversation = this.conversations.find(c => c.id === id);
+
+    // Multi-selection fork: id may point to an external CLI session that's
+    // not yet promoted to a native conversation. Materialize it now so it
+    // shows up natively from here on (with its real title carried over).
+    if (!conversation) {
+      const external = this.getExternalConversation(id);
+      if (external) {
+        conversation = await this.createConversation({
+          sessionId: id,
+          providerId: external.providerId,
+        });
+        conversation.title = external.title;
+        conversation.createdAt = external.createdAt;
+        conversation.updatedAt = external.updatedAt;
+        await this.storage.sessions.saveMetadata(
+          this.storage.sessions.toSessionMetadata(conversation),
+        );
+        // Drop from the external in-memory list; future reads come from native.
+        this.externalConversations = this.externalConversations.filter((e) => e.id !== id);
+      }
+    }
+
     if (!conversation) return null;
 
     await this.loadSdkMessagesForConversation(conversation);
-
     return conversation;
   }
 
@@ -713,7 +771,7 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   getConversationList(): ConversationMeta[] {
-    return this.conversations.map(c => ({
+    const native: ConversationMeta[] = this.conversations.map(c => ({
       id: c.id,
       providerId: c.providerId,
       title: c.title,
@@ -724,6 +782,52 @@ export default class ClaudianPlugin extends Plugin {
       preview: this.getConversationPreview(c),
       titleGenerationStatus: c.titleGenerationStatus,
     }));
+
+    // Multi-selection fork: merge external CLI sessions, deduped by sessionId.
+    // A session may exist in both native and external — prefer native (it has
+    // a curated title, message count, etc.).
+    const seenIds = new Set<string>();
+    const seenSessionIds = new Set<string>();
+    for (const c of this.conversations) {
+      seenIds.add(c.id);
+      if (c.sessionId) seenSessionIds.add(c.sessionId);
+    }
+
+    const externalToShow = this.externalConversations.filter(
+      (e) => !seenIds.has(e.id) && !seenSessionIds.has(e.id),
+    );
+
+    return [...native, ...externalToShow].sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  /**
+   * Multi-selection fork: returns the external entry for an id, if any.
+   * Used by ConversationController to set up resume from a CLI session.
+   */
+  getExternalConversation(id: string): ExternalConversationMeta | null {
+    return this.externalConversations.find((e) => e.id === id) ?? null;
+  }
+
+  /**
+   * Multi-selection fork: rescan all configured external session paths.
+   * Fires registered listeners on completion. Safe to call frequently —
+   * disk I/O is bounded to readdir + 16KB per file.
+   */
+  refreshExternalSessions(): void {
+    const settings = this.settings;
+    this.externalConversations = discoverExternalSessions({
+      app: this.app,
+      includeVaultCliSessions: settings.includeVaultCliSessions ?? true,
+      externalSessionPaths: settings.externalSessionPaths ?? [],
+    });
+    for (const listener of this.externalSessionListeners) {
+      try { listener(); } catch { /* swallow */ }
+    }
+  }
+
+  onExternalSessionsChanged(listener: () => void): () => void {
+    this.externalSessionListeners.add(listener);
+    return () => this.externalSessionListeners.delete(listener);
   }
 
   async persistTabManagerState(state: AppTabManagerState): Promise<void> {

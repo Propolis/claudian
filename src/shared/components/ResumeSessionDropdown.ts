@@ -7,11 +7,18 @@
 
 import { setIcon } from 'obsidian';
 
+import type { ExternalConversationMeta } from '../../app/services/ExternalSessionsDiscovery';
 import type { ConversationMeta } from '../../core/types';
+
+function isExternal(meta: ConversationMeta): meta is ExternalConversationMeta {
+  return (meta as { external?: boolean }).external === true;
+}
 
 export interface ResumeSessionDropdownCallbacks {
   onSelect: (conversationId: string) => void;
   onDismiss: () => void;
+  /** Multi-selection fork: re-scan external session paths and re-render with the latest list. */
+  onRefresh?: () => ConversationMeta[];
 }
 
 export class ResumeSessionDropdown {
@@ -126,11 +133,39 @@ export class ResumeSessionDropdown {
     });
   }
 
+  /** Multi-selection fork: re-fetch conversation list from caller and re-render. */
+  refresh(): void {
+    if (!this.callbacks.onRefresh) return;
+    const updated = this.callbacks.onRefresh();
+    this.conversations = this.sortConversations(updated);
+    this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.conversations.length - 1));
+    this.render();
+    this.dropdownEl.addClass('visible');
+  }
+
   private render(): void {
     this.dropdownEl.empty();
 
     const header = this.dropdownEl.createDiv({ cls: 'claudian-resume-header' });
-    header.createSpan({ text: 'Resume conversation' });
+    header.createSpan({ cls: 'claudian-resume-header-title', text: 'Resume conversation' });
+
+    // Multi-selection fork: refresh button — re-scans external CLI session paths.
+    if (this.callbacks.onRefresh) {
+      const refreshBtn = header.createEl('button', {
+        cls: 'claudian-resume-refresh',
+        attr: { type: 'button', 'aria-label': 'Refresh sessions', title: 'Refresh sessions' },
+      });
+      setIcon(refreshBtn, 'refresh-cw');
+      refreshBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        refreshBtn.addClass('claudian-resume-refresh--spinning');
+        this.refresh();
+        window.setTimeout(() => {
+          refreshBtn.removeClass('claudian-resume-refresh--spinning');
+        }, 400);
+      });
+    }
 
     if (this.conversations.length === 0) {
       this.dropdownEl.createDiv({ cls: 'claudian-resume-empty', text: 'No conversations' });
@@ -147,12 +182,20 @@ export class ResumeSessionDropdown {
       if (isCurrent) item.addClass('current');
       if (i === this.selectedIndex) item.addClass('selected');
 
+      const external = isExternal(conv);
+      if (external) item.addClass('claudian-resume-item--external');
+
       const iconEl = item.createDiv({ cls: 'claudian-resume-item-icon' });
-      setIcon(iconEl, isCurrent ? 'message-square-dot' : 'message-square');
+      setIcon(iconEl, isCurrent ? 'message-square-dot' : external ? 'terminal' : 'message-square');
 
       const content = item.createDiv({ cls: 'claudian-resume-item-content' });
-      const titleEl = content.createDiv({ cls: 'claudian-resume-item-title', text: conv.title });
+      const titleRow = content.createDiv({ cls: 'claudian-resume-item-title-row' });
+      const titleEl = titleRow.createSpan({ cls: 'claudian-resume-item-title', text: conv.title });
       titleEl.setAttribute('title', conv.title);
+      if (external) {
+        const badge = titleRow.createSpan({ cls: 'claudian-resume-item-badge', text: 'CLI' });
+        badge.title = `External session from ${(conv as ExternalConversationMeta).sourcePath}`;
+      }
       content.createDiv({
         cls: 'claudian-resume-item-date',
         text: isCurrent ? 'Current session' : this.formatDate(conv.lastResponseAt ?? conv.createdAt),

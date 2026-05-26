@@ -1704,6 +1704,10 @@ export class InputController {
             new Notice(`Failed to open conversation: ${msg}`);
           });
         },
+        onRefresh: () => {
+          plugin.refreshExternalSessions();
+          return plugin.getConversationList();
+        },
         onDismiss: () => {
           this.destroyResumeDropdown();
         },

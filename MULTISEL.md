@@ -106,3 +106,41 @@ Settings → Community plugins → отключить «Claudian (Multi-Selectio
   `<editor_selection path lines>` блок (без `id`).
 - Pinned-выделения имеют приоритет — когда они есть, single auto-attach
   не добавляется, чтобы не дублировать.
+
+---
+
+## External Claude Code CLI sessions
+
+Форк может показывать в `/resume` дропдауне сессии, начатые в терминальном
+Claude Code, без копирования данных. Транскрипты JSONL читаются прямо из
+`~/.claude/projects/<cwd-hash>/`.
+
+### Зачем
+
+- В терминале и в Claudian — один и тот же SDK, оба пишут JSONL в одно место.
+- Claudian-сессии **уже** видны в терминальном `claude --resume` (потому что JSONL в стандартном месте).
+- Терминальные сессии **раньше не были** видны в Claudian — теперь видны.
+
+### Включение
+
+Settings → Claudian (Multi-Selection) → секция «External Claude code sessions»:
+
+- **Include vault CLI sessions** (включено по умолчанию) — автоматически добавляет в дропдаун сессии из `~/.claude/projects/<vault-hash>/`. Хэш папки соответствует cwd vault'а.
+- **Refresh on Obsidian focus** (включено по умолчанию) — пересканировать пути при возврате фокуса в Obsidian (debounce 500 мс). Чтобы новые сессии из терминала появлялись без ручного клика.
+- **Additional session paths** — список произвольных путей к `~/.claude/projects/<some-cwd-hash>/`, если сессии разбросаны по разным проектам.
+
+### Refresh
+
+В дропдауне `/resume` появилась иконка обновления (вращающаяся стрелка) — клик пересканирует все настроенные пути. Также добавлена команда «Refresh external sessions» в Command Palette.
+
+### Что под капотом
+
+- `src/app/services/ExternalSessionsDiscovery.ts` — скан `*.jsonl`, чтение первых ~16KB для title из первого user-сообщения, `fs.stat` для timestamps. Дедуп по sessionId.
+- `main.ts` — `refreshExternalSessions()` API, `onExternalSessionsChanged` подписки, focus-listener с debounce.
+- `switchConversation(id)` — если id из external, материализует native conversation (создаёт meta.json), сохраняя реальный title/timestamps. Дальше работает как обычная Claudian-сессия.
+- `ResumeSessionDropdown` — refresh-иконка в header, `CLI` badge на external-записях.
+
+### Что НЕ работает
+
+- Конкурентная запись в один JSONL из CLI и Claudian одновременно. Не открывайте одну и ту же сессию в обоих инструментах параллельно.
+- Сессия из cwd, отличного от vault'а, после resume будет получать tool-вызовы с cwd vault'а — Read/Bash будут разрешать пути не относительно оригинального проекта. Работает, но переходит в «новую» рабочую папку.

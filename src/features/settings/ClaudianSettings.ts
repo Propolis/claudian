@@ -338,6 +338,37 @@ export class ClaudianSettingTab extends PluginSettingTab {
         });
     }
 
+    // --- External sessions (multi-selection fork) ---
+
+    new Setting(container).setName('External Claude code sessions').setHeading();
+
+    new Setting(container)
+      .setName('Include vault CLI sessions')
+      .setDesc('Auto-include sessions from ~/.claude/projects/<vault-hash>/ in the resume list. Picks up conversations started in this vault from the terminal Claude Code app.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.includeVaultCliSessions ?? true)
+          .onChange(async (value) => {
+            this.plugin.settings.includeVaultCliSessions = value;
+            await this.plugin.saveSettings();
+            this.plugin.refreshExternalSessions();
+          })
+      );
+
+    new Setting(container)
+      .setName('Refresh on Obsidian focus')
+      .setDesc('Re-scan external session paths whenever the Obsidian window regains focus. Use the refresh button in the resume dropdown for manual control.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.refreshExternalSessionsOnFocus ?? true)
+          .onChange(async (value) => {
+            this.plugin.settings.refreshExternalSessionsOnFocus = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    this.renderExternalSessionPaths(container);
+
     // --- Content ---
 
     new Setting(container).setName(t('settings.content')).setHeading();
@@ -503,6 +534,63 @@ export class ClaudianSettingTab extends PluginSettingTab {
       desc: 'Provider-neutral runtime variables shared across all providers. Use this for PATH, proxy, cert, and temp variables.',
       placeholder: 'PATH=/opt/homebrew/bin:/usr/local/bin\nHTTPS_PROXY=http://proxy.example.com:8080\nSSL_CERT_FILE=/path/to/cert.pem',
       renderCustomContextLimits: (target) => this.renderCustomContextLimits(target),
+    });
+  }
+
+  /**
+   * Multi-selection fork: array-of-paths editor for externalSessionPaths.
+   * Each row: text input + remove button. "Add path" button appends a blank row.
+   */
+  private renderExternalSessionPaths(container: HTMLElement): void {
+    const setting = new Setting(container)
+      .setName('Additional session paths')
+      .setDesc('Absolute paths to ~/.claude/projects/<cwd-hash>/ folders. Sessions from any of these appear in the resume dropdown.');
+
+    setting.addButton((btn) =>
+      btn
+        .setButtonText('+ add path')
+        .setCta()
+        .onClick(async () => {
+          const list = this.plugin.settings.externalSessionPaths ?? [];
+          this.plugin.settings.externalSessionPaths = [...list, ''];
+          await this.plugin.saveSettings();
+          this.display();
+        })
+    );
+
+    const list = this.plugin.settings.externalSessionPaths ?? [];
+    if (list.length === 0) return;
+
+    const rowsWrap = container.createDiv({ cls: 'claudian-external-session-paths' });
+    list.forEach((value, index) => {
+      const row = new Setting(rowsWrap)
+        .addText((text) => {
+          text
+            .setPlaceholder('~/.claude/projects/-Users-…')
+            .setValue(value)
+            .onChange(async (next) => {
+              const current = this.plugin.settings.externalSessionPaths ?? [];
+              const updated = [...current];
+              updated[index] = next.trim();
+              this.plugin.settings.externalSessionPaths = updated;
+              await this.plugin.saveSettings();
+              this.plugin.refreshExternalSessions();
+            });
+          text.inputEl.addClass('claudian-external-session-path-input');
+        })
+        .addExtraButton((btn) =>
+          btn
+            .setIcon('trash-2')
+            .setTooltip('Remove')
+            .onClick(async () => {
+              const current = this.plugin.settings.externalSessionPaths ?? [];
+              this.plugin.settings.externalSessionPaths = current.filter((_, i) => i !== index);
+              await this.plugin.saveSettings();
+              this.plugin.refreshExternalSessions();
+              this.display();
+            })
+        );
+      row.controlEl.addClass('claudian-external-session-path-row');
     });
   }
 

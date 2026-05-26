@@ -113,6 +113,15 @@ export interface ClaudianSettings {
   systemPrompt: string;
   persistentExternalContextPaths: string[];
 
+  // Multi-selection fork: external Claude Code CLI session discovery (optional —
+  // defaults provided in DEFAULT_CLAUDIAN_SETTINGS, code reads via `?? ...`).
+  /** When true, auto-include sessions from ~/.claude/projects/<vault-hash>/ in the resume list. */
+  includeVaultCliSessions?: boolean;
+  /** Additional absolute paths pointing to ~/.claude/projects/<some-cwd-hash>/ folders to scan. */
+  externalSessionPaths?: string[];
+  /** When true, re-scan external session paths whenever the Obsidian window regains focus. */
+  refreshExternalSessionsOnFocus?: boolean;
+
   // Environment
   sharedEnvironmentVariables: string;
   envSnippets: EnvSnippet[];

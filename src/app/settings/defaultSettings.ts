@@ -19,6 +19,11 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   systemPrompt: '',
   persistentExternalContextPaths: [],
 
+  // Multi-selection fork
+  includeVaultCliSessions: true,
+  externalSessionPaths: [],
+  refreshExternalSessionsOnFocus: true,
+
   sharedEnvironmentVariables: '',
   envSnippets: [],
   customContextLimits: {},
