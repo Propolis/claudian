@@ -4,6 +4,7 @@ import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
 import { appendCurrentNote } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
+import { appendPinnedSelections } from '../../../utils/pinnedSelection';
 
 function isCompactCommand(text: string): boolean {
   return /^\/compact(\s|$)/i.test(text);
@@ -21,7 +22,11 @@ export function encodeClaudeTurn(
       persistedContent = appendCurrentNote(persistedContent, request.currentNotePath);
     }
 
-    if (request.editorSelection) {
+    const pinned = request.pinnedSelections ?? [];
+    if (pinned.length > 0) {
+      // Pinned multi-selection takes precedence over single auto-attach to avoid duplicates.
+      persistedContent = appendPinnedSelections(persistedContent, pinned);
+    } else if (request.editorSelection) {
       persistedContent = appendEditorContext(persistedContent, request.editorSelection);
     }
 

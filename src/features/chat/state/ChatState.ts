@@ -1,4 +1,5 @@
 import type { UsageInfo } from '../../../core/types';
+import type { PinnedSelection } from '../../../utils/pinnedSelection';
 import type {
   ChatMessage,
   ChatStateCallbacks,
@@ -21,6 +22,7 @@ function createInitialState(): ChatStateData {
     hasPendingConversationSave: false,
     currentConversationId: null,
     queuedMessage: null,
+    pinnedSelections: [],
     currentContentEl: null,
     currentTextEl: null,
     currentTextContent: '',
@@ -172,6 +174,44 @@ export class ChatState {
 
   set queuedMessage(value: QueuedMessage | null) {
     this.state.queuedMessage = value;
+  }
+
+  // ============================================
+  // Pinned Selections (multi-selection fork)
+  // ============================================
+
+  get pinnedSelections(): PinnedSelection[] {
+    return [...this.state.pinnedSelections];
+  }
+
+  hasPinnedSelections(): boolean {
+    return this.state.pinnedSelections.length > 0;
+  }
+
+  addPinnedSelection(selection: PinnedSelection): void {
+    this.state.pinnedSelections.push(selection);
+    this._callbacks.onPinnedSelectionsChanged?.([...this.state.pinnedSelections]);
+  }
+
+  removePinnedSelection(id: string): void {
+    const before = this.state.pinnedSelections.length;
+    this.state.pinnedSelections = this.state.pinnedSelections.filter((s) => s.id !== id);
+    if (this.state.pinnedSelections.length !== before) {
+      this._callbacks.onPinnedSelectionsChanged?.([...this.state.pinnedSelections]);
+    }
+  }
+
+  updatePinnedSelectionComment(id: string, comment: string): void {
+    const target = this.state.pinnedSelections.find((s) => s.id === id);
+    if (!target) return;
+    target.comment = comment;
+    this._callbacks.onPinnedSelectionsChanged?.([...this.state.pinnedSelections]);
+  }
+
+  clearPinnedSelections(): void {
+    if (this.state.pinnedSelections.length === 0) return;
+    this.state.pinnedSelections = [];
+    this._callbacks.onPinnedSelectionsChanged?.([]);
   }
 
   // ============================================

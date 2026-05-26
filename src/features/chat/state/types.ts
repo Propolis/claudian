@@ -12,6 +12,7 @@ import type {
 import type { BrowserSelectionContext } from '../../../utils/browser';
 import type { CanvasSelectionContext } from '../../../utils/canvas';
 import type { EditorSelectionContext } from '../../../utils/editor';
+import type { PinnedSelection } from '../../../utils/pinnedSelection';
 import type { ThinkingBlockState } from '../rendering/ThinkingBlockRenderer';
 import type { WriteEditState } from '../rendering/WriteEditRenderer';
 
@@ -22,6 +23,8 @@ export interface QueuedMessage {
   editorContext: EditorSelectionContext | null;
   browserContext?: BrowserSelectionContext | null;
   canvasContext: CanvasSelectionContext | null;
+  /** Pinned multi-selection snapshot captured at enqueue time (fork addition). */
+  pinnedSelections?: PinnedSelection[];
   /** Provider-neutral turn snapshot captured at enqueue time. */
   turnRequest?: ChatTurnRequest;
 }
@@ -65,6 +68,12 @@ export interface ChatStateData {
 
   // Queued message
   queuedMessage: QueuedMessage | null;
+
+  /**
+   * Multi-selection fork: user-pinned editor selections accumulated via the
+   * floating "Attach to chat" button. Consumed and cleared on send.
+   */
+  pinnedSelections: PinnedSelection[];
 
   // Active streaming DOM state
   currentContentEl: HTMLElement | null;
@@ -119,6 +128,8 @@ export interface ChatStateCallbacks {
   onTodosChanged?: (todos: TodoItem[] | null) => void;
   onAttentionChanged?: (needsAttention: boolean) => void;
   onAutoScrollChanged?: (enabled: boolean) => void;
+  /** Multi-selection fork: fired whenever pinnedSelections changes. */
+  onPinnedSelectionsChanged?: (selections: PinnedSelection[]) => void;
 }
 
 /** Options for query execution. */
@@ -129,6 +140,7 @@ export type {
   ChatMessage,
   EditorSelectionContext,
   ImageAttachment,
+  PinnedSelection,
   SubagentInfo,
   ThinkingBlockState,
   TodoItem,

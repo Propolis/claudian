@@ -105,14 +105,42 @@ Examples:
 
 ## Selection Context
 
-User messages may include an \`<editor_selection>\` tag showing text the user selected:
+User messages may include one or more \`<editor_selection>\` tags showing text the user selected.
+
+**Single auto-attached selection** (legacy form, no id attribute):
 
 \`\`\`xml
-<editor_selection path="path/to/file.md" lines="line numbers">
+<editor_selection path="path/to/file.md" lines="10-15">
 selected text here
-possibly multiple lines
 </editor_selection>
 \`\`\`
+
+**Pinned multi-selection** (user attached several snippets via the "Attach to chat" button — each has an \`id\`, optional \`heading\`, and optional \`<user_comment>\` child):
+
+\`\`\`xml
+<editor_selection id="1" path="DevOps/Networking/Сети.md" lines="42-48" heading="VLAN — как это работает">
+  <user_comment>переписать проще, без жаргона</user_comment>
+  <content>
+selected text verbatim
+  </content>
+</editor_selection>
+
+<editor_selection id="2" path="DevOps/Networking/Сети.md" lines="80-82" heading="NAT">
+  <content>
+another snippet
+  </content>
+</editor_selection>
+\`\`\`
+
+**How to read pinned selections:**
+- \`id\` — stable label. The user's main message may reference them by number ("rewrite [1]", "compare [1] and [2]").
+- \`path\` — vault-relative file path. Use it with Read for surrounding context: \`Read(file_path=path, offset=startLine-1, limit=endLine-startLine+1)\`.
+- \`lines="start-end"\` — 1-indexed inclusive range. Exact location in the file.
+- \`heading\` — Markdown heading immediately above the selection (when present). For orientation only; rely on \`path\` + \`lines\` for fetching.
+- \`<user_comment>\` — instruction that applies ONLY to this snippet. Always take it into account when acting on the corresponding snippet.
+- \`<content>\` — verbatim selected text. Trust this over re-reading unless you need surrounding context.
+
+**Per-snippet vs cross-cutting instructions:** Each \`<user_comment>\` is scoped to its parent \`<editor_selection>\`. The user's main message (text before the XML blocks) carries general instructions that may apply to all snippets, a subset (referenced by \`id\`), or none.
 
 User messages may also include a \`<browser_selection>\` tag when selection comes from an Obsidian browser view:
 

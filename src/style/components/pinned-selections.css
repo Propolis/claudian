@@ -1,0 +1,253 @@
+/* Claudian Multi-Selection Fork - pinned selections + floating attach button */
+
+/* ============================================
+ * Floating "Attach to chat" button
+ * ============================================ */
+
+.claudian-floating-attach-btn {
+  position: fixed;
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: var(--font-ui-small);
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  user-select: none;
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+
+.claudian-floating-attach-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+}
+
+.claudian-floating-attach-btn:active {
+  transform: translateY(0);
+}
+
+.claudian-floating-attach-btn--pulse {
+  animation: claudian-attach-pulse 280ms ease-out;
+}
+
+@keyframes claudian-attach-pulse {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.08); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28); }
+  100% { transform: scale(1); }
+}
+
+.claudian-floating-attach-btn__icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+}
+
+.claudian-floating-attach-btn__icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-floating-attach-btn__label {
+  white-space: nowrap;
+}
+
+/* ============================================
+ * Pinned selections row (above input)
+ * ============================================ */
+
+.claudian-pinned-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  margin: 0 0 6px 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.claudian-pinned-row__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 4px;
+  border-bottom: 1px dashed var(--background-modifier-border);
+}
+
+.claudian-pinned-row__title {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.claudian-pinned-row__clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.claudian-pinned-row__clear:hover {
+  color: var(--text-error);
+  background: var(--background-modifier-hover);
+}
+
+.claudian-pinned-row__clear svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ============================================
+ * Pinned selection chip
+ * ============================================ */
+
+.claudian-pinned-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  transition: border-color 120ms ease;
+}
+
+.claudian-pinned-chip:hover {
+  border-color: var(--interactive-accent);
+}
+
+.claudian-pinned-chip--has-comment {
+  border-left: 3px solid var(--interactive-accent);
+}
+
+.claudian-pinned-chip__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.claudian-pinned-chip__ordinal {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: var(--font-ui-smaller);
+  font-weight: 600;
+  font-family: var(--font-monospace);
+  line-height: 1;
+}
+
+.claudian-pinned-chip__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.claudian-pinned-chip__snippet {
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  line-height: 1.35;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.claudian-pinned-chip__snippet:hover {
+  color: var(--interactive-accent);
+}
+
+.claudian-pinned-chip__meta {
+  margin-top: 3px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.claudian-pinned-chip__path {
+  font-family: var(--font-monospace);
+}
+
+.claudian-pinned-chip__heading {
+  font-style: italic;
+}
+
+.claudian-pinned-chip__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.claudian-pinned-chip__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.claudian-pinned-chip__action:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-pinned-chip__action--active {
+  color: var(--interactive-accent);
+}
+
+.claudian-pinned-chip__action svg {
+  width: 13px;
+  height: 13px;
+}
+
+.claudian-pinned-chip__comment {
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-family: var(--font-text);
+  font-size: var(--font-ui-small);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.claudian-pinned-chip__comment:focus {
+  outline: 1px solid var(--interactive-accent);
+  border-color: var(--interactive-accent);
+}

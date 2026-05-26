@@ -4,6 +4,7 @@ import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
 import { appendCurrentNote } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
+import { appendPinnedSelections } from '../../../utils/pinnedSelection';
 import { buildContextFromHistory, buildPromptWithHistoryContext } from '../../../utils/session';
 import type { AcpContentBlock } from '../../acp';
 
@@ -17,7 +18,10 @@ export function buildOpencodePromptText(
     prompt = appendCurrentNote(prompt, request.currentNotePath);
   }
 
-  if (request.editorSelection && request.editorSelection.mode !== 'none') {
+  const pinned = request.pinnedSelections ?? [];
+  if (pinned.length > 0) {
+    prompt = appendPinnedSelections(prompt, pinned);
+  } else if (request.editorSelection && request.editorSelection.mode !== 'none') {
     prompt = appendEditorContext(prompt, request.editorSelection);
   }
 

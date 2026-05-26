@@ -1,6 +1,7 @@
 import type { BrowserSelectionContext } from '../../utils/browser';
 import type { CanvasSelectionContext } from '../../utils/canvas';
 import type { EditorSelectionContext } from '../../utils/editor';
+import type { PinnedSelection } from '../../utils/pinnedSelection';
 import type {
   ApprovalDecision,
   Conversation,
@@ -47,6 +48,13 @@ export interface ChatTurnRequest {
   images?: ImageAttachment[];
   currentNotePath?: string;
   editorSelection?: EditorSelectionContext | null;
+  /**
+   * Multi-selection fork: user-pinned editor selections accumulated via the
+   * floating "Attach to chat" button. Emitted as numbered <editor_selection>
+   * blocks. Takes precedence over `editorSelection` when non-empty (the
+   * single-selection auto-attach is suppressed to avoid duplicates).
+   */
+  pinnedSelections?: PinnedSelection[] | null;
   browserSelection?: BrowserSelectionContext | null;
   canvasSelection?: CanvasSelectionContext | null;
   externalContextPaths?: string[];

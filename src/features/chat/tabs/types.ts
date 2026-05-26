@@ -2,6 +2,7 @@ import type { Component, WorkspaceLeaf } from 'obsidian';
 
 import type { InstructionRefineService, ProviderId, TitleGenerationService } from '../../../core/providers/types';
 import type { ChatRuntime } from '../../../core/runtime/ChatRuntime';
+import type { FloatingAttachButton } from '../../../shared/components/FloatingAttachButton';
 import type { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import type { BrowserSelectionController } from '../controllers/BrowserSelectionController';
 import type { CanvasSelectionController } from '../controllers/CanvasSelectionController';
@@ -28,6 +29,7 @@ import type {
 } from '../ui/InputToolbar';
 import type { InstructionModeManager } from '../ui/InstructionModeManager';
 import type { NavigationSidebar } from '../ui/NavigationSidebar';
+import type { PinnedSelectionsRow } from '../ui/PinnedSelectionsRow';
 import type { StatusPanel } from '../ui/StatusPanel';
 
 /**
@@ -126,6 +128,9 @@ export interface TabUIComponents {
   contextUsageMeter: ContextUsageMeter | null;
   statusPanel: StatusPanel | null;
   navigationSidebar: NavigationSidebar | null;
+  /** Multi-selection fork: chip row above input + floating attach button. */
+  pinnedSelectionsRow: PinnedSelectionsRow | null;
+  floatingAttachButton: FloatingAttachButton | null;
 }
 
 /**
@@ -149,6 +154,9 @@ export interface TabDOMElements {
 
   /** Context row for file chips and selection indicator (inside input wrapper). */
   contextRowEl: HTMLElement;
+
+  /** Multi-selection fork: row above context row holding pinned selection chips. */
+  pinnedSelectionsRowEl: HTMLElement;
 
   selectionIndicatorEl: HTMLElement | null;
   browserIndicatorEl: HTMLElement | null;

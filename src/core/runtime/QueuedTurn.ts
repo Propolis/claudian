@@ -1,3 +1,4 @@
+import type { PinnedSelection } from '../../utils/pinnedSelection';
 import type { ImageAttachment } from '../types';
 import type { ChatTurnRequest } from './types';
 
@@ -10,6 +11,7 @@ export function cloneChatTurnRequest(request: ChatTurnRequest): ChatTurnRequest 
   return {
     ...request,
     images: cloneImages(request.images),
+    pinnedSelections: clonePinnedSelections(request.pinnedSelections),
     externalContextPaths: request.externalContextPaths
       ? [...request.externalContextPaths]
       : undefined,
@@ -40,6 +42,10 @@ export function mergeQueuedChatTurns(
       text: mergeText(existingRequest.text, incomingRequest.text),
       images: mergeImages(existingRequest.images, incomingRequest.images),
       currentNotePath: incomingRequest.currentNotePath ?? existingRequest.currentNotePath,
+      pinnedSelections: mergePinnedSelections(
+        existingRequest.pinnedSelections,
+        incomingRequest.pinnedSelections,
+      ),
       externalContextPaths: mergeStringLists(
         existingRequest.externalContextPaths,
         incomingRequest.externalContextPaths,
@@ -61,6 +67,22 @@ function mergeText(first: string, second: string): string {
 
 function cloneImages(images: ImageAttachment[] | undefined): ImageAttachment[] | undefined {
   return images && images.length > 0 ? [...images] : undefined;
+}
+
+function clonePinnedSelections(
+  selections: PinnedSelection[] | null | undefined,
+): PinnedSelection[] | undefined {
+  if (!selections || selections.length === 0) return undefined;
+  return selections.map((s) => ({ ...s }));
+}
+
+function mergePinnedSelections(
+  first: PinnedSelection[] | null | undefined,
+  second: PinnedSelection[] | null | undefined,
+): PinnedSelection[] | undefined {
+  const merged = [...(first ?? []), ...(second ?? [])];
+  if (merged.length === 0) return undefined;
+  return merged.map((s) => ({ ...s }));
 }
 
 function mergeImages(

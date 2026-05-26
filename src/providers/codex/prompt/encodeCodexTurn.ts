@@ -24,7 +24,18 @@ export function encodeCodexTurn(request: ChatTurnRequest): PreparedChatTurn {
     sections.push(`\n[Current note: ${request.currentNotePath}]`);
   }
 
-  if (request.editorSelection?.selectedText) {
+  const pinned = request.pinnedSelections ?? [];
+  if (pinned.length > 0) {
+    for (const sel of pinned) {
+      const headingPart = sel.heading ? ` § ${sel.heading}` : '';
+      const commentPart = sel.comment.trim()
+        ? `\nComment: ${sel.comment.trim()}`
+        : '';
+      sections.push(
+        `\n[Editor selection [${sel.id}] from ${sel.notePath} lines ${sel.startLine}-${sel.endLine}${headingPart}:${commentPart}\n${sel.selectedText}\n]`,
+      );
+    }
+  } else if (request.editorSelection?.selectedText) {
     sections.push(
       `\n[Editor selection from ${request.editorSelection.notePath || 'current note'}:\n${request.editorSelection.selectedText}\n]`,
     );

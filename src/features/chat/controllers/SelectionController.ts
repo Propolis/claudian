@@ -1,8 +1,10 @@
-import type { App } from 'obsidian';
-import { MarkdownView } from 'obsidian';
+import type { App, HeadingCache } from 'obsidian';
+import { MarkdownView, TFile } from 'obsidian';
 
 import { hideSelectionHighlight, showSelectionHighlight } from '../../../shared/components/SelectionHighlight';
 import { type EditorSelectionContext, getEditorView } from '../../../utils/editor';
+import { createPinnedSelectionId, type PinnedSelection } from '../../../utils/pinnedSelection';
+import type { ChatState } from '../state/ChatState';
 import type { StoredSelection } from '../state/types';
 import { updateContextRowHasContent } from './contextRowVisibility';
 
@@ -26,6 +28,8 @@ export class SelectionController {
   private storedSelection: StoredSelection | null = null;
   private inputHandoffGraceUntil: number | null = null;
   private pollInterval: number | null = null;
+  private chatState: ChatState | null = null;
+  private onSelectionPresenceChange: ((hasSelection: boolean) => void) | null = null;
   private readonly focusScopePointerDownHandler = () => {
     if (!this.storedSelection) return;
     this.inputHandoffGraceUntil = Date.now() + INPUT_HANDOFF_GRACE_MS;
@@ -362,6 +366,7 @@ export class SelectionController {
       this.indicatorEl.addClass('claudian-hidden');
     }
     this.updateContextRowVisibility();
+    this.onSelectionPresenceChange?.(this.storedSelection !== null);
   }
 
   updateContextRowVisibility(): void {
@@ -387,6 +392,66 @@ export class SelectionController {
 
   hasSelection(): boolean {
     return this.storedSelection !== null;
+  }
+
+  // ============================================
+  // Multi-selection fork: pinning API
+  // ============================================
+
+  /** Wire the chat state and a callback that fires whenever the active editor selection appears/disappears. */
+  setMultiSelectionDeps(chatState: ChatState, onPresenceChange: (hasSelection: boolean) => void): void {
+    this.chatState = chatState;
+    this.onSelectionPresenceChange = onPresenceChange;
+  }
+
+  /** Snapshot of the active selection enriched with the nearest Markdown heading. Used by the floating "Attach to chat" button. */
+  buildPinnedFromActive(): PinnedSelection | null {
+    const s = this.storedSelection;
+    if (!s || !s.selectedText.trim()) return null;
+
+    const lineCount = s.lineCount;
+    const startLine = s.startLine ?? 1;
+    const endLine = startLine + lineCount - 1;
+
+    const heading = this.findEnclosingHeading(s.notePath, startLine);
+
+    return {
+      id: createPinnedSelectionId(),
+      notePath: s.notePath,
+      startLine,
+      endLine,
+      heading,
+      selectedText: s.selectedText,
+      comment: '',
+    };
+  }
+
+  pinActiveSelection(): PinnedSelection | null {
+    const state = this.chatState;
+    if (!state) return null;
+    const pin = this.buildPinnedFromActive();
+    if (!pin) return null;
+    state.addPinnedSelection(pin);
+    return pin;
+  }
+
+  private findEnclosingHeading(notePath: string, startLine1Indexed: number): string {
+    if (!notePath || notePath === 'unknown') return '';
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile)) return '';
+    const cache = this.app.metadataCache.getFileCache(file);
+    const headings = cache?.headings;
+    if (!headings || headings.length === 0) return '';
+    const startLine0Indexed = startLine1Indexed - 1;
+    let best: HeadingCache | null = null;
+    for (const h of headings) {
+      if (h.position.start.line <= startLine0Indexed) {
+        best = h;
+      } else {
+        break;
+      }
+    }
+    return best?.heading ?? '';
   }
 
   // ============================================

@@ -740,6 +740,12 @@ export class InputController {
       : options.content;
     const enabledMcpServers = mcpServerSelector?.getEnabledServers();
 
+    // Multi-selection fork: snapshot the pinned selections and consume them.
+    const pinnedSnapshot = this.deps.state.pinnedSelections;
+    if (pinnedSnapshot.length > 0) {
+      this.deps.state.clearPinnedSelections();
+    }
+
     return {
       displayContent: options.content,
       turnRequest: {
@@ -747,6 +753,7 @@ export class InputController {
         images: options.images,
         currentNotePath: shouldSendCurrentNote && currentNotePath ? currentNotePath : undefined,
         editorSelection: editorContext,
+        pinnedSelections: pinnedSnapshot.length > 0 ? pinnedSnapshot : undefined,
         browserSelection: browserContext,
         canvasSelection: canvasContext,
         externalContextPaths: externalContextPaths && externalContextPaths.length > 0
@@ -817,6 +824,7 @@ export class InputController {
       content: displayContent,
       images: request.images,
       editorContext: request.editorSelection ?? null,
+      pinnedSelections: request.pinnedSelections ?? undefined,
       browserContext: request.browserSelection ?? null,
       canvasContext: request.canvasSelection ?? null,
       turnRequest: request,
@@ -837,6 +845,7 @@ export class InputController {
         text: message.content,
         images: message.images ? [...message.images] : undefined,
         editorSelection: message.editorContext,
+        pinnedSelections: message.pinnedSelections ?? undefined,
         browserSelection: message.browserContext ?? null,
         canvasSelection: message.canvasContext,
       },

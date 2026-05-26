@@ -23,6 +23,7 @@ import { TOOL_AGENT_OUTPUT } from '../../../core/tools/toolNames';
 import type { ChatMessage, ClaudianSettings, Conversation, StreamChunk } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type ClaudianPlugin from '../../../main';
+import { FloatingAttachButton } from '../../../shared/components/FloatingAttachButton';
 import { SlashCommandDropdown } from '../../../shared/components/SlashCommandDropdown';
 import { getEnhancedPath } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
@@ -45,6 +46,7 @@ import { ImageContextManager } from '../ui/ImageContext';
 import { createInputToolbar } from '../ui/InputToolbar';
 import { InstructionModeManager as InstructionModeManagerClass } from '../ui/InstructionModeManager';
 import { NavigationSidebar } from '../ui/NavigationSidebar';
+import { PinnedSelectionsRow } from '../ui/PinnedSelectionsRow';
 import { StatusPanel } from '../ui/StatusPanel';
 import { autoResizeTextarea } from '../ui/textareaResize';
 import { recalculateUsageForModel } from '../utils/usageInfo';
@@ -450,6 +452,8 @@ export function createTab(options: TabCreateOptions): TabData {
       contextUsageMeter: null,
       statusPanel: null,
       navigationSidebar: null,
+      pinnedSelectionsRow: null,
+      floatingAttachButton: null,
     },
     dom,
     renderer: null,
@@ -470,6 +474,8 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
   const queueIndicatorEl = inputContainerEl.createDiv({ cls: 'claudian-input-queue-row' });
   const navRowEl = inputContainerEl.createDiv({ cls: 'claudian-input-nav-row' });
   const inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
+  // Pinned multi-selection row sits ABOVE the existing context row (chips first).
+  const pinnedSelectionsRowEl = inputWrapper.createDiv({ cls: 'claudian-pinned-row claudian-hidden' });
   const contextRowEl = inputWrapper.createDiv({ cls: 'claudian-context-row' });
   const inputEl = inputWrapper.createEl('textarea', {
     cls: 'claudian-input',
@@ -491,6 +497,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     inputEl,
     navRowEl,
     contextRowEl,
+    pinnedSelectionsRowEl,
     selectionIndicatorEl: null,
     browserIndicatorEl: null,
     canvasIndicatorEl: null,
@@ -1202,6 +1209,27 @@ export function initializeTabControllers(
     dom.contentEl,
   );
 
+  // Multi-selection fork: floating attach button + chip row + state wiring.
+  tab.ui.floatingAttachButton = new FloatingAttachButton(
+    plugin.app,
+    tab.controllers.selectionController,
+  );
+  tab.ui.pinnedSelectionsRow = new PinnedSelectionsRow(
+    plugin.app,
+    tab.state,
+    dom.pinnedSelectionsRowEl,
+    () => autoResizeTextarea(dom.inputEl),
+  );
+  tab.controllers.selectionController.setMultiSelectionDeps(tab.state, (hasSelection) => {
+    tab.ui.floatingAttachButton?.setVisible(hasSelection);
+  });
+  tab.state.callbacks = {
+    ...tab.state.callbacks,
+    onPinnedSelectionsChanged: (selections) => {
+      tab.ui.pinnedSelectionsRow?.render(selections);
+    },
+  };
+
   tab.controllers.browserSelectionController = new BrowserSelectionController(
     plugin.app,
     dom.browserIndicatorEl!,
@@ -1572,6 +1600,11 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.controllers.canvasSelectionController?.stop();
   tab.controllers.canvasSelectionController?.clear();
   tab.controllers.navigationController?.dispose();
+  // Multi-selection fork: tear down floating button + pinned chip row.
+  tab.ui.floatingAttachButton?.dispose();
+  tab.ui.floatingAttachButton = null;
+  tab.ui.pinnedSelectionsRow?.dispose();
+  tab.ui.pinnedSelectionsRow = null;
 
   cleanupThinkingBlock(tab.state.currentThinkingState);
   tab.state.currentThinkingState = null;
