@@ -381,6 +381,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       );
 
     this.renderExternalSessionPaths(container);
+    this.renderGroupNames(container);
 
     // --- Content ---
 
@@ -605,6 +606,87 @@ export class ClaudianSettingTab extends PluginSettingTab {
         );
       row.controlEl.addClass('claudian-external-session-path-row');
     });
+  }
+
+  /**
+   * Multi-selection fork: lists all detected Desktop groups (cg-uuids) with
+   * a text input next to each so the user can assign friendly names in one
+   * pass. Names aren't recoverable from disk (cloud-only in Claude Desktop),
+   * so this is the practical way to migrate them.
+   */
+  private renderGroupNames(container: HTMLElement): void {
+    new Setting(container)
+      .setName('Group names')
+      .setDesc('Claude Desktop stores group names on its server, not on disk. Assign friendly names here — they persist across reloads. Click ⟳ to refresh detected groups.')
+      .addButton((btn) => {
+        btn.setIcon('refresh-cw').setTooltip('Re-scan for groups').onClick(() => {
+          this.plugin.refreshExternalSessions();
+          this.display();
+        });
+      });
+
+    // Gather distinct cg-uuids from the current external sessions + Desktop config.
+    const desktopOrder = this.plugin.getDesktopGroupOrder();
+    const fromSessions = new Set<string>();
+    for (const conv of this.plugin.getConversationList()) {
+      const gid = (conv as { groupId?: string | null }).groupId;
+      if (gid) fromSessions.add(gid);
+    }
+    // Desktop order is canonical when available; sessions cover any extras.
+    const groupIds = [
+      ...desktopOrder,
+      ...[...fromSessions].filter((id) => !desktopOrder.includes(id)),
+    ];
+
+    if (groupIds.length === 0) {
+      container.createDiv({
+        cls: 'claudian-group-names-empty',
+        text: 'No groups detected yet. Open the resume dropdown or click sync to load Desktop sessions, then return here.',
+      });
+      return;
+    }
+
+    // Pre-build a per-group title preview (first 2 chats by title) for context.
+    const previewByGroup = new Map<string, string[]>();
+    for (const conv of this.plugin.getConversationList()) {
+      const gid = (conv as { groupId?: string | null }).groupId;
+      if (!gid) continue;
+      if (!previewByGroup.has(gid)) previewByGroup.set(gid, []);
+      const list = previewByGroup.get(gid)!;
+      if (list.length < 2) list.push(conv.title);
+    }
+
+    const wrap = container.createDiv({ cls: 'claudian-group-names-list' });
+    for (const gid of groupIds) {
+      const row = wrap.createDiv({ cls: 'claudian-group-names-row' });
+
+      const idEl = row.createDiv({ cls: 'claudian-group-names-id' });
+      const suffix = gid.startsWith('cg-') ? gid.slice(3, 11) : gid.slice(0, 8);
+      idEl.createSpan({ cls: 'claudian-group-names-suffix', text: suffix });
+      const previews = previewByGroup.get(gid) ?? [];
+      if (previews.length > 0) {
+        const preview = previews.join(' · ');
+        const previewEl = idEl.createSpan({ cls: 'claudian-group-names-preview', text: preview });
+        previewEl.title = preview;
+      }
+
+      const currentName = this.plugin.settings.groupNames?.[gid] ?? '';
+      const input = row.createEl('input', {
+        cls: 'claudian-group-names-input',
+        attr: { type: 'text', placeholder: 'Set group name…', value: currentName },
+      });
+      input.addEventListener('change', async () => {
+        const map = { ...(this.plugin.settings.groupNames ?? {}) };
+        const trimmed = input.value.trim();
+        if (trimmed) {
+          map[gid] = trimmed;
+        } else {
+          delete map[gid];
+        }
+        this.plugin.settings.groupNames = map;
+        await this.plugin.saveSettings();
+      });
+    }
   }
 
   private renderHiddenProviderCommandSetting(
