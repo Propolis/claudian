@@ -800,12 +800,13 @@ export class ConversationController {
   ): void {
     const { state } = this.deps;
     const isCurrent = conv.id === state.currentConversationId;
+    const noTranscript = (conv as { noTranscript?: boolean }).noTranscript === true;
     const item = list.createDiv({
       cls: `claudian-history-item${isCurrent ? ' active' : ''}`,
     });
     if (conversationIsArchived(conv)) item.addClass('claudian-history-item--archived');
+    if (noTranscript) item.addClass('claudian-history-item--no-transcript');
 
-    // Continue with original per-item rendering inline (was a `for` body above).
     this.renderHistoryItemBody(item, conv, isCurrent, options);
   }
 
@@ -819,14 +820,23 @@ export class ConversationController {
     setIcon(iconEl, isCurrent ? 'message-square-dot' : 'message-square');
 
     const content = item.createDiv({ cls: 'claudian-history-item-content' });
-    const titleEl = content.createDiv({ cls: 'claudian-history-item-title', text: conv.title });
+    const titleRow = content.createDiv({ cls: 'claudian-history-item-title-row' });
+    const titleEl = titleRow.createSpan({ cls: 'claudian-history-item-title', text: conv.title });
     titleEl.setAttribute('title', conv.title);
+    const noTranscript = (conv as { noTranscript?: boolean }).noTranscript === true;
+    if (noTranscript) {
+      const badge = titleRow.createSpan({
+        cls: 'claudian-history-item-badge claudian-history-item-badge--no-transcript',
+        text: 'NO LOG',
+      });
+      badge.title = 'No JSONL transcript on disk — Desktop knows this chat but it can\'t be opened here.';
+    }
     content.createDiv({
       cls: 'claudian-history-item-date',
       text: isCurrent ? 'Current session' : this.formatDate(conv.lastResponseAt ?? conv.updatedAt ?? conv.createdAt),
     });
 
-    if (!isCurrent) {
+    if (!isCurrent && !noTranscript) {
       content.addEventListener('click', (e) => {
         e.stopPropagation();
         if (this.isHistoryNewTabModifierClick(e) && options.onOpenConversationInNewTab) {

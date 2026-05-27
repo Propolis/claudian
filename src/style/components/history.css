@@ -222,6 +222,48 @@
   opacity: 0.65;
 }
 
+/* No-transcript sessions: visible but un-openable */
+.claudian-history-item--no-transcript {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.claudian-history-item-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.claudian-history-item-title-row .claudian-history-item-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.claudian-history-item-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  height: 15px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-family: var(--font-monospace);
+}
+
+.claudian-history-item-badge--no-transcript {
+  background: var(--background-modifier-border);
+  color: var(--text-faint);
+}
+
 .claudian-history-item {
   display: flex;
   align-items: center;

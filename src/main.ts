@@ -900,6 +900,7 @@ export default class ClaudianPlugin extends Plugin {
         sourcePath: info.sourcePath,
         groupId: info.groupId,
         isArchived: info.isArchived,
+        noTranscript: info.noTranscript,
       }));
 
     for (const listener of this.externalSessionListeners) {

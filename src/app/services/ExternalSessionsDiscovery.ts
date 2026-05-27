@@ -282,6 +282,8 @@ export interface ExternalConversationMeta extends ConversationMeta {
   groupId?: string | null;
   /** True if Desktop has archived (soft-deleted) this chat. */
   isArchived?: boolean;
+  /** True when Desktop knows the session but no JSONL transcript exists on disk. */
+  noTranscript?: boolean;
 }
 
 /**
@@ -310,18 +312,24 @@ export interface JsonlSessionInfo {
   sourcePath: string;
   createdAt: number;
   updatedAt: number;
+  /**
+   * True when no JSONL was found for this session — Desktop knows about it
+   * but the transcript is missing (deleted or never written). Such sessions
+   * can be displayed but cannot be resumed.
+   */
+  noTranscript?: boolean;
 }
 
 export function discoverAllJsonlSessions(opts: DiscoveryOptions): JsonlSessionInfo[] {
   const dirs = resolveScanPaths(opts);
-  if (dirs.length === 0) return [];
 
-  // Load Desktop metadata index once per discovery pass — it's a few hundred KB
-  // total across 70-100 sessions on a typical user's machine.
+  // Load Desktop metadata index — primary source for groups + archived + titles.
   const desktopIndex = loadDesktopSessionsIndex().byCliSessionId;
 
   const out: JsonlSessionInfo[] = [];
+  const seenCliSessionIds = new Set<string>();
 
+  // Pass 1 — walk JSONL files in configured project dirs. These can be resumed.
   for (const dir of dirs) {
     let entries: string[];
     try {
@@ -343,6 +351,7 @@ export function discoverAllJsonlSessions(opts: DiscoveryOptions): JsonlSessionIn
       if (!stat.isFile() || stat.size === 0) continue;
 
       const sessionId = name.slice(0, -SESSION_FILE_EXT.length);
+      seenCliSessionIds.add(sessionId);
       const desktopMeta = desktopIndex.get(sessionId);
 
       // Desktop title wins. Fall back to JSONL parse if Desktop has nothing.
@@ -370,6 +379,24 @@ export function discoverAllJsonlSessions(opts: DiscoveryOptions): JsonlSessionIn
     }
   }
 
+  // Pass 2 — Desktop-tracked sessions WITHOUT a JSONL on disk. Includes chats
+  // started from a cwd we don't scan, or chats whose transcript was deleted.
+  // Surfaced so the chat count in the dropdown matches Desktop exactly.
+  for (const [cliSessionId, desktopMeta] of desktopIndex) {
+    if (seenCliSessionIds.has(cliSessionId)) continue;
+    out.push({
+      sessionId: cliSessionId,
+      title: desktopMeta.title || `Untitled ${cliSessionId.slice(0, 8)}`,
+      titleSource: 'desktop',
+      groupId: desktopMeta.groupId,
+      isArchived: desktopMeta.isArchived,
+      sourcePath: '<desktop-only>',
+      createdAt: desktopMeta.lastActivityAt ?? Date.now(),
+      updatedAt: desktopMeta.lastActivityAt ?? Date.now(),
+      noTranscript: true,
+    });
+  }
+
   out.sort((a, b) => b.updatedAt - a.updatedAt);
   return out;
 }
@@ -392,6 +419,7 @@ export function discoverExternalSessions(opts: DiscoveryOptions): ExternalConver
     sourcePath: info.sourcePath,
     groupId: info.groupId,
     isArchived: info.isArchived,
+    noTranscript: info.noTranscript,
   }));
 }
 

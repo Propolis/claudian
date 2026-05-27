@@ -675,7 +675,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
         cls: 'claudian-group-names-input',
         attr: { type: 'text', placeholder: 'Set group name…', value: currentName },
       });
-      input.addEventListener('change', async () => {
+
+      let saveTimer: number | null = null;
+      const save = async () => {
         const map = { ...(this.plugin.settings.groupNames ?? {}) };
         const trimmed = input.value.trim();
         if (trimmed) {
@@ -685,6 +687,29 @@ export class ClaudianSettingTab extends PluginSettingTab {
         }
         this.plugin.settings.groupNames = map;
         await this.plugin.saveSettings();
+        // Notify any open history dropdown so it re-renders with the new name.
+        this.plugin.refreshExternalSessions();
+      };
+
+      // Debounced save on every keystroke so the user doesn't lose changes
+      // when they close settings without blurring the input.
+      input.addEventListener('input', () => {
+        if (saveTimer !== null) window.clearTimeout(saveTimer);
+        saveTimer = window.setTimeout(() => {
+          saveTimer = null;
+          void save();
+        }, 300);
+      });
+      // Save immediately on blur / Enter so user knows it stuck.
+      input.addEventListener('blur', () => {
+        if (saveTimer !== null) { window.clearTimeout(saveTimer); saveTimer = null; }
+        void save();
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          input.blur();
+        }
       });
     }
   }
