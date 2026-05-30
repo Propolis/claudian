@@ -1,4 +1,4 @@
-import { existsSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -44,22 +44,49 @@ export function getSDKSessionPath(vaultPath: string, sessionId: string): string 
   return path.join(projectsPath, encodedVault, `${sessionId}.jsonl`);
 }
 
-export function sdkSessionExists(vaultPath: string, sessionId: string): boolean {
+/**
+ * Multi-selection fork: locate `<sessionId>.jsonl` anywhere under
+ * `~/.claude/projects/`. The vault-based path only finds chats started from
+ * the vault's cwd; sessions opened in worktrees, sibling projects, or via
+ * external CLI live under a different `<hash>/` and would otherwise be
+ * invisible to hydration. Returns the first match, or null when truly absent.
+ */
+export function findSDKSessionPathAnywhere(sessionId: string): string | null {
+  if (!isValidSessionId(sessionId)) return null;
+  const projectsPath = getSDKProjectsPath();
+  let folders: string[];
   try {
-    const sessionPath = getSDKSessionPath(vaultPath, sessionId);
-    return existsSync(sessionPath);
+    folders = readdirSync(projectsPath);
   } catch {
-    return false;
+    return null;
   }
+  const filename = `${sessionId}.jsonl`;
+  for (const folder of folders) {
+    const candidate = path.join(projectsPath, folder, filename);
+    try {
+      if (existsSync(candidate)) return candidate;
+    } catch { /* skip unreadable */ }
+  }
+  return null;
+}
+
+/** Resolves the on-disk JSONL path: vault-derived first, then global lookup. */
+function resolveSDKSessionPath(vaultPath: string, sessionId: string): string | null {
+  try {
+    const vaultBased = getSDKSessionPath(vaultPath, sessionId);
+    if (existsSync(vaultBased)) return vaultBased;
+  } catch { /* invalid id or path — fall through to global */ }
+  return findSDKSessionPathAnywhere(sessionId);
+}
+
+export function sdkSessionExists(vaultPath: string, sessionId: string): boolean {
+  return resolveSDKSessionPath(vaultPath, sessionId) !== null;
 }
 
 export async function deleteSDKSession(vaultPath: string, sessionId: string): Promise<void> {
   try {
-    const sessionPath = getSDKSessionPath(vaultPath, sessionId);
-    if (!existsSync(sessionPath)) {
-      return;
-    }
-
+    const sessionPath = resolveSDKSessionPath(vaultPath, sessionId);
+    if (!sessionPath) return;
     await fs.unlink(sessionPath);
   } catch {
     // Best-effort deletion
@@ -71,8 +98,8 @@ export async function readSDKSession(
   sessionId: string,
 ): Promise<SDKSessionReadResult> {
   try {
-    const sessionPath = getSDKSessionPath(vaultPath, sessionId);
-    if (!existsSync(sessionPath)) {
+    const sessionPath = resolveSDKSessionPath(vaultPath, sessionId);
+    if (!sessionPath) {
       return { messages: [], skippedLines: 0 };
     }
 

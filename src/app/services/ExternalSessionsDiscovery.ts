@@ -320,6 +320,37 @@ export interface JsonlSessionInfo {
   noTranscript?: boolean;
 }
 
+/**
+ * Walks every `~/.claude/projects/<hash>/` subfolder once and returns a
+ * sessionId → containing-directory map. Used by Pass 2 to find JSONLs that
+ * live outside the configured scan paths (e.g. chats started in a worktree
+ * or sibling project) so we don't falsely flag them `noTranscript: true`.
+ *
+ * Cheap: ~50 readdirSync calls, only when discovery runs (sync button / focus).
+ */
+function buildGlobalSessionIndex(): Map<string, string> {
+  const projectsRoot = expandHomePath('~/.claude/projects');
+  const out = new Map<string, string>();
+  let folders: string[];
+  try {
+    folders = fs.readdirSync(projectsRoot);
+  } catch {
+    return out;
+  }
+  for (const folder of folders) {
+    const dir = path.join(projectsRoot, folder);
+    try {
+      if (!fs.statSync(dir).isDirectory()) continue;
+      for (const name of fs.readdirSync(dir)) {
+        if (!name.endsWith(SESSION_FILE_EXT)) continue;
+        const sessionId = name.slice(0, -SESSION_FILE_EXT.length);
+        if (!out.has(sessionId)) out.set(sessionId, dir);
+      }
+    } catch { /* unreadable folder — skip */ }
+  }
+  return out;
+}
+
 export function discoverAllJsonlSessions(opts: DiscoveryOptions): JsonlSessionInfo[] {
   const dirs = resolveScanPaths(opts);
 
@@ -379,11 +410,51 @@ export function discoverAllJsonlSessions(opts: DiscoveryOptions): JsonlSessionIn
     }
   }
 
-  // Pass 2 — Desktop-tracked sessions WITHOUT a JSONL on disk. Includes chats
-  // started from a cwd we don't scan, or chats whose transcript was deleted.
-  // Surfaced so the chat count in the dropdown matches Desktop exactly.
+  // Pass 2 — Desktop-tracked sessions Pass 1 missed. Either:
+  //   (a) JSONL lives outside the configured scan dirs (different cwd /
+  //       worktree) → recover it via a global lookup so the user can open it.
+  //   (b) Truly no JSONL on disk (transcript deleted, or chat never wrote one)
+  //       → keep the noTranscript placeholder so chat counts match Desktop.
+  const globalSessionIndex = buildGlobalSessionIndex();
   for (const [cliSessionId, desktopMeta] of desktopIndex) {
     if (seenCliSessionIds.has(cliSessionId)) continue;
+
+    const externalDir = globalSessionIndex.get(cliSessionId);
+    if (externalDir) {
+      const filePath = path.join(externalDir, cliSessionId + SESSION_FILE_EXT);
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(filePath);
+      } catch {
+        continue;
+      }
+      if (!stat.isFile() || stat.size === 0) continue;
+
+      let title: string;
+      let titleSource: JsonlSessionInfo['titleSource'];
+      if (desktopMeta.title) {
+        title = desktopMeta.title;
+        titleSource = 'desktop';
+      } else {
+        const fromJsonl = extractTitleResultFromJsonl(filePath);
+        title = stripXmlContextFromTitle(fromJsonl.title);
+        titleSource = fromJsonl.source;
+      }
+
+      seenCliSessionIds.add(cliSessionId);
+      out.push({
+        sessionId: cliSessionId,
+        title,
+        titleSource,
+        groupId: desktopMeta.groupId,
+        isArchived: desktopMeta.isArchived,
+        sourcePath: externalDir,
+        createdAt: stat.birthtimeMs || stat.ctimeMs,
+        updatedAt: desktopMeta.lastActivityAt ?? stat.mtimeMs,
+      });
+      continue;
+    }
+
     out.push({
       sessionId: cliSessionId,
       title: desktopMeta.title || `Untitled ${cliSessionId.slice(0, 8)}`,
