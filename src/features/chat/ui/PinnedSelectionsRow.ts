@@ -17,12 +17,21 @@ import type { ChatState } from '../state/ChatState';
 
 const COMMENT_PLACEHOLDER = 'Комментарий к этому фрагменту (необязательно)…';
 
+interface CommentFocusSnapshot {
+  id: string;
+  selectionStart: number;
+  selectionEnd: number;
+  scrollTop: number;
+}
+
 export class PinnedSelectionsRow {
   private app: App;
   private chatState: ChatState;
   private rootEl: HTMLElement;
   private onChange: () => void;
   private expanded: Set<string> = new Set();
+  /** Id of a chip that was JUST expanded (via toggle) and deserves auto-focus on next render. */
+  private justExpandedId: string | null = null;
 
   constructor(app: App, chatState: ChatState, rootEl: HTMLElement, onChange: () => void) {
     this.app = app;
@@ -36,6 +45,13 @@ export class PinnedSelectionsRow {
 
   /** Re-render the chip list from the current state. */
   render(selections: PinnedSelection[]): void {
+    // Snapshot the caret of the focused comment textarea BEFORE we wipe the DOM —
+    // otherwise the new textarea created by empty()/createEl gets cursor=end on
+    // every keystroke, which jumps the user to the end of the comment mid-edit.
+    const focusSnapshot = this.captureCommentFocus();
+    const justExpanded = this.justExpandedId;
+    this.justExpandedId = null;
+
     this.rootEl.empty();
     if (selections.length === 0) {
       this.rootEl.addClass('claudian-hidden');
@@ -56,6 +72,15 @@ export class PinnedSelectionsRow {
     });
 
     selections.forEach((sel, idx) => this.renderChip(sel, idx + 1));
+
+    // Restore caret (mid-edit case) or auto-focus a freshly-expanded chip.
+    // Snapshot wins because it means the user is actively typing.
+    if (focusSnapshot) {
+      this.restoreCommentFocus(focusSnapshot);
+    } else if (justExpanded) {
+      this.focusCommentForChip(justExpanded);
+    }
+
     this.onChange();
   }
 
@@ -69,6 +94,7 @@ export class PinnedSelectionsRow {
 
   private renderChip(sel: PinnedSelection, ordinal: number): void {
     const chip = this.rootEl.createDiv({ cls: 'claudian-pinned-chip' });
+    chip.dataset.pinnedId = sel.id;
     const isExpanded = this.expanded.has(sel.id);
     if (isExpanded) chip.addClass('claudian-pinned-chip--expanded');
     if (sel.comment.trim()) chip.addClass('claudian-pinned-chip--has-comment');
@@ -128,8 +154,8 @@ export class PinnedSelectionsRow {
       commentEl.addEventListener('input', () => {
         this.chatState.updatePinnedSelectionComment(sel.id, commentEl.value);
       });
-      // Auto-focus when newly expanded
-      window.setTimeout(() => commentEl.focus(), 0);
+      // Focus is restored centrally in render() — either via captureCommentFocus
+      // (mid-edit caret preservation) or via justExpandedId (initial expand).
     }
   }
 
@@ -138,8 +164,59 @@ export class PinnedSelectionsRow {
       this.expanded.delete(id);
     } else {
       this.expanded.add(id);
+      this.justExpandedId = id;
     }
     this.render(this.chatState.pinnedSelections);
+  }
+
+  // ============================================
+  // Caret preservation across re-renders
+  // ============================================
+
+  private captureCommentFocus(): CommentFocusSnapshot | null {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLTextAreaElement)) return null;
+    if (!active.classList.contains('claudian-pinned-chip__comment')) return null;
+    const chipEl = active.closest('.claudian-pinned-chip') as HTMLElement | null;
+    const id = chipEl?.dataset.pinnedId;
+    if (!id) return null;
+    return {
+      id,
+      selectionStart: active.selectionStart ?? active.value.length,
+      selectionEnd: active.selectionEnd ?? active.value.length,
+      scrollTop: active.scrollTop,
+    };
+  }
+
+  private restoreCommentFocus(snap: CommentFocusSnapshot): void {
+    const textarea = this.findCommentTextarea(snap.id);
+    if (!textarea) return;
+    textarea.focus();
+    // setSelectionRange after focus — order matters; focus() can reset selection
+    // on some browsers if called afterwards.
+    try {
+      textarea.setSelectionRange(snap.selectionStart, snap.selectionEnd);
+    } catch {
+      // Some browsers throw on setSelectionRange for unattached/hidden elements.
+      // Caret position is a nicety; don't crash the render path over it.
+    }
+    textarea.scrollTop = snap.scrollTop;
+  }
+
+  private focusCommentForChip(id: string): void {
+    const textarea = this.findCommentTextarea(id);
+    if (!textarea) return;
+    // setTimeout because Obsidian may steal focus during the same tick when
+    // a panel/leaf transition is happening (e.g. just after toggling expand).
+    window.setTimeout(() => textarea.focus(), 0);
+  }
+
+  private findCommentTextarea(pinnedId: string): HTMLTextAreaElement | null {
+    const escaped = window.CSS && typeof window.CSS.escape === 'function'
+      ? window.CSS.escape(pinnedId)
+      : pinnedId.replace(/"/g, '\\"');
+    const chip = this.rootEl.querySelector(`.claudian-pinned-chip[data-pinned-id="${escaped}"]`);
+    return (chip?.querySelector('.claudian-pinned-chip__comment') as HTMLTextAreaElement | null) ?? null;
   }
 
   private openNoteAtSelection(sel: PinnedSelection): void {
