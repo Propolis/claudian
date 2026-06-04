@@ -32,6 +32,8 @@ export class PinnedSelectionsRow {
   private expanded: Set<string> = new Set();
   /** Id of a chip that was JUST expanded (via toggle) and deserves auto-focus on next render. */
   private justExpandedId: string | null = null;
+  /** When true, hide the chip list and only show the header (count + clear). */
+  private isListCollapsed = false;
 
   constructor(app: App, chatState: ChatState, rootEl: HTMLElement, onChange: () => void) {
     this.app = app;
@@ -55,23 +57,62 @@ export class PinnedSelectionsRow {
     this.rootEl.empty();
     if (selections.length === 0) {
       this.rootEl.addClass('claudian-hidden');
+      this.rootEl.removeClass('claudian-pinned-row--collapsed');
       this.onChange();
       return;
     }
     this.rootEl.removeClass('claudian-hidden');
+    if (this.isListCollapsed) this.rootEl.addClass('claudian-pinned-row--collapsed');
+    else this.rootEl.removeClass('claudian-pinned-row--collapsed');
 
     const header = this.rootEl.createDiv({ cls: 'claudian-pinned-row__header' });
-    header.createSpan({ cls: 'claudian-pinned-row__title', text: `Прикреплено: ${selections.length}` });
+
+    // Chevron: collapses/expands the whole chip list.
+    const collapseBtn = header.createEl('button', {
+      cls: 'claudian-pinned-row__collapse',
+      attr: {
+        type: 'button',
+        'aria-label': this.isListCollapsed ? 'Развернуть список' : 'Свернуть список',
+        title: this.isListCollapsed ? 'Развернуть' : 'Свернуть',
+      },
+    });
+    setIcon(collapseBtn, this.isListCollapsed ? 'chevron-right' : 'chevron-down');
+
+    const title = header.createSpan({
+      cls: 'claudian-pinned-row__title',
+      text: `Прикреплено: ${selections.length}`,
+    });
+
+    // Whole header (chevron + title area) toggles collapse; spacer fills middle so
+    // the trash button stays right-aligned without conflicting with the click target.
+    const spacer = header.createDiv({ cls: 'claudian-pinned-row__spacer' });
+
+    const toggleCollapsed = (e: Event) => {
+      e.stopPropagation();
+      this.isListCollapsed = !this.isListCollapsed;
+      this.render(this.chatState.pinnedSelections);
+    };
+    collapseBtn.addEventListener('click', toggleCollapsed);
+    title.addEventListener('click', toggleCollapsed);
+    spacer.addEventListener('click', toggleCollapsed);
+
     const clearBtn = header.createEl('button', {
       cls: 'claudian-pinned-row__clear',
       attr: { type: 'button', 'aria-label': 'Убрать все', title: 'Убрать все' },
     });
     setIcon(clearBtn, 'trash-2');
-    clearBtn.addEventListener('click', () => {
+    clearBtn.addEventListener('click', (e) => {
+      // Don't let the click bubble to the collapse handlers above.
+      e.stopPropagation();
       this.chatState.clearPinnedSelections();
     });
 
-    selections.forEach((sel, idx) => this.renderChip(sel, idx + 1));
+    // Skip rendering chips entirely when collapsed — faster, and means caret
+    // restoration / chip expand state are preserved logically (in this.expanded)
+    // for when the user reopens the list.
+    if (!this.isListCollapsed) {
+      selections.forEach((sel, idx) => this.renderChip(sel, idx + 1));
+    }
 
     // Restore caret (mid-edit case) or auto-focus a freshly-expanded chip.
     // Snapshot wins because it means the user is actively typing.

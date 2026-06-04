@@ -80,9 +80,35 @@
 .claudian-pinned-row__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   padding-bottom: 4px;
   border-bottom: 1px dashed var(--background-modifier-border);
+}
+
+.claudian-pinned-row__collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 3px;
+  flex: 0 0 auto;
+  transition: transform 100ms ease, background 100ms ease;
+}
+
+.claudian-pinned-row__collapse:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-pinned-row__collapse svg {
+  width: 14px;
+  height: 14px;
 }
 
 .claudian-pinned-row__title {
@@ -90,6 +116,30 @@
   color: var(--text-muted);
   font-weight: 600;
   letter-spacing: 0.02em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.claudian-pinned-row__title:hover {
+  color: var(--text-normal);
+}
+
+.claudian-pinned-row__spacer {
+  flex: 1 1 auto;
+  align-self: stretch;
+  cursor: pointer;
+  min-height: 18px;
+}
+
+/* Collapsed state: hide chips, tighten the row, drop the dashed underline. */
+.claudian-pinned-row--collapsed {
+  max-height: none;
+  overflow: visible;
+}
+
+.claudian-pinned-row--collapsed .claudian-pinned-row__header {
+  padding-bottom: 0;
+  border-bottom: none;
 }
 
 .claudian-pinned-row__clear {
