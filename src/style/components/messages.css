@@ -11,6 +11,13 @@
 .claudian-messages {
   flex: 1;
   overflow-y: auto;
+  /* overflow-x: hidden — without this, when overflow-y is set, the X axis
+   * defaults to auto, so any overflowing child (long inline code, a wide
+   * table, an absolutely-positioned element) summons a useless horizontal
+   * scrollbar across the whole conversation. Text is responsive — the
+   * scrollbar has nothing meaningful to scroll. Code blocks and tables
+   * still scroll inside themselves via their own overflow-x: auto. */
+  overflow-x: hidden;
   padding: 12px 0;
   display: flex;
   flex-direction: column;
