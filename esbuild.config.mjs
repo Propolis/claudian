@@ -4,6 +4,7 @@ import path from 'path';
 import process from 'process';
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   promises as fsPromises,
@@ -105,6 +106,38 @@ const copyToObsidian = {
 
       const pluginVendorRoot = path.join(OBSIDIAN_PLUGIN_PATH, '.codex-vendor');
       rmSync(pluginVendorRoot, { recursive: true, force: true });
+
+      // classic-level (and its transitive deps) are kept as external because
+      // the package has a native binding that esbuild cannot bundle. We mirror
+      // the flat node_modules layout from the source repo into the installed
+      // plugin folder so runtime `require('classic-level')` resolves locally.
+      const NATIVE_DEPS = [
+        'classic-level',
+        'abstract-level',
+        'module-error',
+        'napi-macros',
+        'node-gyp-build',
+        'buffer',
+        'is-buffer',
+        'level-supports',
+        'level-transcoder',
+        'maybe-combine-errors',
+        'base64-js',
+        'ieee754',
+      ];
+      const pluginNodeModules = path.join(OBSIDIAN_PLUGIN_PATH, 'node_modules');
+      for (const dep of NATIVE_DEPS) {
+        const src = path.join(process.cwd(), 'node_modules', dep);
+        const dst = path.join(pluginNodeModules, dep);
+        if (!existsSync(src)) continue;
+        rmSync(dst, { recursive: true, force: true });
+        mkdirSync(path.dirname(dst), { recursive: true });
+        try {
+          cpSync(src, dst, { recursive: true });
+        } catch (err) {
+          console.warn(`Failed to copy ${dep}:`, err);
+        }
+      }
     });
   }
 };
@@ -127,6 +160,18 @@ const context = await esbuild.context({
     '@lezer/common',
     '@lezer/highlight',
     '@lezer/lr',
+    // Native module — has prebuilt binary that esbuild cannot bundle; copied
+    // alongside main.js via copyToObsidian, required at runtime.
+    'classic-level',
+    // classic-level's transitive deps. Excluded from bundling so they share
+    // the runtime-resolved tree rather than getting double-included.
+    'abstract-level',
+    'module-error',
+    'napi-macros',
+    'node-gyp-build',
+    'level-supports',
+    'level-transcoder',
+    'maybe-combine-errors',
     ...builtinModules,
     ...builtinModules.map(m => `node:${m}`),
   ],

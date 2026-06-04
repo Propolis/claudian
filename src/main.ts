@@ -20,6 +20,7 @@ import {
   type ExternalConversationMeta,
 } from './app/services/ExternalSessionsDiscovery';
 import { loadDesktopGroupsConfig } from './app/services/DesktopGroupsConfig';
+import { readDesktopGroupNames } from './app/services/DesktopGroupNamesReader';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
 import { SharedStorageService } from './app/storage/SharedStorageService';
 import type { SharedAppStorage } from './core/bootstrap/storage';
@@ -70,6 +71,8 @@ export default class ClaudianPlugin extends Plugin {
   private externalSessionListeners: Set<() => void> = new Set();
   /** Multi-selection fork: Desktop's sidebar group order (cg-uuids), refreshed on each external scan. */
   private desktopGroupOrder: string[] = [];
+  /** Multi-selection fork: cg-uuid → name discovered from Desktop's localStorage. */
+  desktopGroupNames: Map<string, string> = new Map();
 
   async onload() {
     await this.loadSettings();
@@ -844,6 +847,18 @@ export default class ClaudianPlugin extends Plugin {
 
     // Refresh Desktop's group order — used for default group display order.
     this.desktopGroupOrder = loadDesktopGroupsConfig().groupOrder;
+
+    // Refresh discovered group names from Desktop's localStorage. Async + best-
+    // effort: completes after this method returns, then re-notifies listeners
+    // so the UI repaints with the real names. Failures (Desktop not running,
+    // ABI mismatch, key missing) leave the previous map intact.
+    void readDesktopGroupNames().then((names) => {
+      if (names.size === 0) return;
+      this.desktopGroupNames = names;
+      for (const cb of this.externalSessionListeners) {
+        try { cb(); } catch { /* listener throw is non-fatal */ }
+      }
+    });
 
     // Index by sessionId for fast lookup.
     const bySessionId = new Map<string, typeof allFound[number]>();

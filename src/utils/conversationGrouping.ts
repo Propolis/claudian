@@ -48,11 +48,24 @@ export function isArchived(meta: ConversationMeta): boolean {
   return meta.isArchived === true;
 }
 
-export function resolveGroupName(groupId: string | null, settings: GroupSettings): string {
+export function resolveGroupName(
+  groupId: string | null,
+  settings: GroupSettings,
+  discovered?: Map<string, string> | Record<string, string>,
+): string {
   if (groupId === null) return 'Ungrouped';
+  // 1. Explicit user-set rename in our settings wins — gives users an escape
+  //    hatch if Desktop changed names or we read stale data.
   const custom = settings.groupNames?.[groupId];
   if (custom && custom.trim()) return custom.trim();
-  // Fallback: short hash from the cg-<uuid>. Stable across reloads.
+  // 2. Name discovered from Desktop's localStorage (real Anthropic-side name).
+  if (discovered) {
+    const fromDesktop = discovered instanceof Map
+      ? discovered.get(groupId)
+      : discovered[groupId];
+    if (fromDesktop && fromDesktop.trim()) return fromDesktop.trim();
+  }
+  // 3. Fallback: short hash from the cg-<uuid>. Stable across reloads.
   const suffix = groupId.startsWith('cg-') ? groupId.slice(3, 7) : groupId.slice(0, 4);
   return `Group ${suffix}`;
 }
@@ -73,7 +86,13 @@ export function resolveGroupName(groupId: string | null, settings: GroupSettings
 export function computeGroupSections(
   conversations: ConversationMeta[],
   settings: GroupSettings,
-  options: { searchQuery: string; showArchived: boolean; desktopGroupOrder?: string[] },
+  options: {
+    searchQuery: string;
+    showArchived: boolean;
+    desktopGroupOrder?: string[];
+    /** Map of cg-uuid → name discovered from Desktop's localStorage. */
+    discoveredGroupNames?: Map<string, string>;
+  },
 ): GroupSection[] {
   const q = options.searchQuery.trim().toLowerCase();
   const filtered = conversations.filter((conv) => {
@@ -122,7 +141,7 @@ export function computeGroupSections(
     }
     const section: GroupSection = {
       groupId: gid,
-      name: resolveGroupName(gid, settings),
+      name: resolveGroupName(gid, settings, options.discoveredGroupNames),
       pinned: pinned.has(gid),
       collapsed: collapsedSet.has(gid),
       items,

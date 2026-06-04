@@ -627,6 +627,7 @@ export class ConversationController {
       searchQuery: this.historySearchQuery,
       showArchived: this.historyShowArchived,
       desktopGroupOrder: plugin.getDesktopGroupOrder(),
+      discoveredGroupNames: plugin.desktopGroupNames,
     });
 
     const totalVisible = sections.reduce((acc, s) => acc + s.items.length, 0);
