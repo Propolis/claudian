@@ -28,6 +28,9 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   groupOrder: [],
   groupNames: {},
   collapsedGroupIds: [],
+  voiceEnabled: true,
+  groqApiKey: '',
+  voiceLanguage: 'auto',
 
   sharedEnvironmentVariables: '',
   envSnippets: [],

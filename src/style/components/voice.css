@@ -1,0 +1,64 @@
+/* Claudian Multi-Selection Fork — voice dictation mic button */
+
+.claudian-voice-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.claudian-voice-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-voice-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-voice-btn[disabled] {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* Recording: red, pulsing. */
+.claudian-voice-btn--recording {
+  color: var(--text-on-accent);
+  background: var(--color-red, #d45d5d);
+  animation: claudian-voice-pulse 1.2s ease-in-out infinite;
+}
+
+.claudian-voice-btn--recording:hover {
+  color: var(--text-on-accent);
+  background: var(--color-red, #d45d5d);
+}
+
+@keyframes claudian-voice-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(212, 93, 93, 0.55); }
+  70%  { box-shadow: 0 0 0 6px rgba(212, 93, 93, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(212, 93, 93, 0); }
+}
+
+/* Transcribing: spinning loader. */
+.claudian-voice-btn--transcribing {
+  color: var(--interactive-accent);
+}
+
+.claudian-voice-btn--transcribing svg {
+  animation: claudian-voice-spin 0.9s linear infinite;
+}
+
+@keyframes claudian-voice-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}

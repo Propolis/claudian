@@ -15,12 +15,12 @@ import './providers';
 import type { Editor, WorkspaceLeaf } from 'obsidian';
 import { MarkdownView, Notice, Plugin } from 'obsidian';
 
+import { readDesktopGroupNames } from './app/services/DesktopGroupNamesReader';
+import { loadDesktopGroupsConfig } from './app/services/DesktopGroupsConfig';
 import {
   discoverAllJsonlSessions,
   type ExternalConversationMeta,
 } from './app/services/ExternalSessionsDiscovery';
-import { loadDesktopGroupsConfig } from './app/services/DesktopGroupsConfig';
-import { readDesktopGroupNames } from './app/services/DesktopGroupNamesReader';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
 import { SharedStorageService } from './app/storage/SharedStorageService';
 import type { SharedAppStorage } from './core/bootstrap/storage';

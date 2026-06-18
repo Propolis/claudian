@@ -36,7 +36,6 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-
 // snappyjs is pure JS (no native binding) so esbuild bundles it into main.js.
 import * as snappy from 'snappyjs';
 
@@ -81,12 +80,9 @@ function readVarint(buf: Buffer, off: number): [number, number] {
 }
 
 function readBlockHandle(buf: Buffer, off: number): [BlockHandle, number] {
-  let offset: number;
-  let size: number;
-  let p = off;
-  [offset, p] = readVarint(buf, p);
-  [size, p] = readVarint(buf, p);
-  return [{ offset, size }, p];
+  const [offset, afterOffset] = readVarint(buf, off);
+  const [size, afterSize] = readVarint(buf, afterOffset);
+  return [{ offset, size }, afterSize];
 }
 
 /** Read + decompress a block by handle. Skips the 4-byte CRC trailer. */
@@ -135,12 +131,9 @@ function parseFooter(file: Buffer): BlockHandle {
   if (file.length < 48) throw new Error('file too small for footer');
   const footer = file.subarray(file.length - 48);
   if (!footer.subarray(40).equals(SST_MAGIC)) throw new Error('bad SST magic');
-  let p = 0;
-  let metaHandle: BlockHandle;
-  let indexHandle: BlockHandle;
-  [metaHandle, p] = readBlockHandle(footer, p);
-  void metaHandle;
-  [indexHandle, p] = readBlockHandle(footer, p);
+  // Footer = metaindex handle, then index handle, then padding + magic.
+  const [, afterMeta] = readBlockHandle(footer, 0);
+  const [indexHandle] = readBlockHandle(footer, afterMeta);
   return indexHandle;
 }
 

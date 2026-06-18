@@ -49,6 +49,7 @@ import { NavigationSidebar } from '../ui/NavigationSidebar';
 import { PinnedSelectionsRow } from '../ui/PinnedSelectionsRow';
 import { StatusPanel } from '../ui/StatusPanel';
 import { autoResizeTextarea } from '../ui/textareaResize';
+import { VoiceDictationButton } from '../ui/VoiceDictationButton';
 import { recalculateUsageForModel } from '../utils/usageInfo';
 import { getTabProviderId } from './providerResolution';
 import type { TabData, TabDOMElements, TabId, TabProviderContext } from './types';
@@ -454,6 +455,7 @@ export function createTab(options: TabCreateOptions): TabData {
       navigationSidebar: null,
       pinnedSelectionsRow: null,
       floatingAttachButton: null,
+      voiceDictationButton: null,
     },
     dom,
     renderer: null,
@@ -734,6 +736,35 @@ function isBangBashEnabled(settings: Record<string, unknown>): boolean {
 }
 
 /**
+ * Inserts text into the composer at the current cursor position, joining with a
+ * space when it would otherwise glue onto an adjacent word. Triggers the input
+ * event so auto-resize and context handlers update, then refocuses. Used by the
+ * voice dictation button (multi-selection fork).
+ */
+function insertTextAtCursor(textarea: HTMLTextAreaElement, text: string): void {
+  const insert = text.trim();
+  if (!insert) return;
+
+  const value = textarea.value;
+  const start = textarea.selectionStart ?? value.length;
+  const end = textarea.selectionEnd ?? value.length;
+  const before = value.slice(0, start);
+  const after = value.slice(end);
+
+  const needLeadingSpace = before.length > 0 && !/\s$/.test(before);
+  const needTrailingSpace = after.length > 0 && !/^\s/.test(after);
+  const piece = (needLeadingSpace ? ' ' : '') + insert + (needTrailingSpace ? ' ' : '');
+
+  textarea.value = before + piece + after;
+  const caret = start + piece.length;
+  textarea.setSelectionRange(caret, caret);
+
+  // Let auto-resize and @-mention / instruction handlers react to the change.
+  textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  textarea.focus();
+}
+
+/**
  * Creates and wires the input toolbar for a tab.
  */
 function initializeInputToolbar(
@@ -889,6 +920,16 @@ function initializeInputToolbar(
   tab.ui.mcpServerSelector = toolbarComponents.mcpServerSelector;
   tab.ui.permissionToggle = toolbarComponents.permissionToggle;
   tab.ui.serviceTierToggle = toolbarComponents.serviceTierToggle;
+
+  // Multi-selection fork: voice dictation mic button. Records mic audio and
+  // transcribes it via Groq Whisper, inserting the result at the cursor.
+  if (plugin.settings.voiceEnabled !== false) {
+    tab.ui.voiceDictationButton = new VoiceDictationButton(inputToolbar, {
+      getApiKey: () => plugin.settings.groqApiKey ?? '',
+      getLanguage: () => plugin.settings.voiceLanguage ?? 'auto',
+      insertText: (text) => insertTextAtCursor(dom.inputEl, text),
+    });
+  }
 
   tab.ui.mcpServerSelector.setMcpManager(getProviderMcpManager(getTabProviderId(tab, plugin)));
 
@@ -1605,6 +1646,8 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.ui.floatingAttachButton = null;
   tab.ui.pinnedSelectionsRow?.dispose();
   tab.ui.pinnedSelectionsRow = null;
+  tab.ui.voiceDictationButton?.dispose();
+  tab.ui.voiceDictationButton = null;
 
   cleanupThinkingBlock(tab.state.currentThinkingState);
   tab.state.currentThinkingState = null;

@@ -31,6 +31,7 @@ import type { InstructionModeManager } from '../ui/InstructionModeManager';
 import type { NavigationSidebar } from '../ui/NavigationSidebar';
 import type { PinnedSelectionsRow } from '../ui/PinnedSelectionsRow';
 import type { StatusPanel } from '../ui/StatusPanel';
+import type { VoiceDictationButton } from '../ui/VoiceDictationButton';
 
 /**
  * Default number of tabs allowed.
@@ -131,6 +132,8 @@ export interface TabUIComponents {
   /** Multi-selection fork: chip row above input + floating attach button. */
   pinnedSelectionsRow: PinnedSelectionsRow | null;
   floatingAttachButton: FloatingAttachButton | null;
+  /** Multi-selection fork: mic button for voice dictation in the composer. */
+  voiceDictationButton: VoiceDictationButton | null;
 }
 
 /**

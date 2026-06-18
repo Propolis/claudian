@@ -140,6 +140,15 @@ export interface ClaudianSettings {
   /** Group uuids whose section is currently collapsed. */
   collapsedGroupIds?: string[];
 
+  // Voice dictation (multi-selection fork). Mic button in the composer records
+  // audio and transcribes it via Groq's Whisper API (free tier, no credit card).
+  /** When true, show the mic button in the composer. */
+  voiceEnabled?: boolean;
+  /** Groq API key for Whisper transcription. Stored locally; never logged. */
+  groqApiKey?: string;
+  /** Transcription language: 'auto' to let Whisper detect, or an ISO code like 'ru'/'en'. */
+  voiceLanguage?: string;
+
   // Environment
   sharedEnvironmentVariables: string;
   envSnippets: EnvSnippet[];

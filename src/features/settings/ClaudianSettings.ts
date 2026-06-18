@@ -338,6 +338,10 @@ export class ClaudianSettingTab extends PluginSettingTab {
         });
     }
 
+    // --- Voice dictation (multi-selection fork) ---
+
+    this.renderVoiceSettings(container);
+
     // --- External sessions (multi-selection fork) ---
 
     new Setting(container).setName('External Claude code sessions').setHeading();
@@ -549,6 +553,72 @@ export class ClaudianSettingTab extends PluginSettingTab {
       placeholder: 'PATH=/opt/homebrew/bin:/usr/local/bin\nHTTPS_PROXY=http://proxy.example.com:8080\nSSL_CERT_FILE=/path/to/cert.pem',
       renderCustomContextLimits: (target) => this.renderCustomContextLimits(target),
     });
+  }
+
+  /**
+   * Multi-selection fork: voice dictation section. Toggle, Groq API key
+   * (password field), and transcription language. Free Groq key (no credit
+   * card) is what powers the mic button in the composer.
+   */
+  private renderVoiceSettings(container: HTMLElement): void {
+    new Setting(container).setName('Голосовой ввод').setHeading();
+
+    new Setting(container)
+      .setName('Кнопка микрофона в поле ввода')
+      .setDesc('Показывать 🎤 в композере: нажми — говоришь, нажми ещё — текст распознаётся и вставляется к курсору.')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.voiceEnabled !== false)
+          .onChange(async (value) => {
+            this.plugin.settings.voiceEnabled = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    const keySetting = new Setting(container)
+      .setName('Groq API-ключ')
+      .setDesc(createFragment((frag) => {
+        frag.appendText('Бесплатный ключ для распознавания речи (Whisper large-v3-turbo). Хранится локально, никуда кроме Groq не уходит. Получить за 2 минуты без карты: ');
+        const a = frag.createEl('a', { text: 'console.groq.com/keys', href: 'https://console.groq.com/keys' });
+        a.setAttr('target', '_blank');
+      }))
+      .addText((text) => {
+        text
+          .setPlaceholder('gsk_…')
+          .setValue(this.plugin.settings.groqApiKey ?? '')
+          .onChange(async (value) => {
+            this.plugin.settings.groqApiKey = value.trim();
+            await this.plugin.saveSettings();
+          });
+        text.inputEl.type = 'password';
+        text.inputEl.autocomplete = 'off';
+        text.inputEl.addClass('claudian-groq-key-input');
+      });
+    keySetting.addExtraButton((btn) =>
+      btn
+        .setIcon('eye')
+        .setTooltip('Показать/скрыть ключ')
+        .onClick(() => {
+          const input = keySetting.controlEl.querySelector('input.claudian-groq-key-input') as HTMLInputElement | null;
+          if (!input) return;
+          input.type = input.type === 'password' ? 'text' : 'password';
+        })
+    );
+
+    new Setting(container)
+      .setName('Язык распознавания')
+      .setDesc('«Авто» — Whisper сам определит язык. Зафиксируй язык, если стабильно диктуешь на одном.')
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption('auto', 'Авто')
+          .addOption('ru', 'Русский (ru)')
+          .addOption('en', 'English (en)')
+          .setValue(this.plugin.settings.voiceLanguage ?? 'auto')
+          .onChange(async (value) => {
+            this.plugin.settings.voiceLanguage = value;
+            await this.plugin.saveSettings();
+          });
+      });
   }
 
   /**
