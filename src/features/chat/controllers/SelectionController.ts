@@ -12,6 +12,30 @@ const SELECTION_POLL_INTERVAL = 250;
 const INPUT_HANDOFF_GRACE_MS = 1500;
 const HIGHLIGHT_KEY = 'claudian-selection';
 
+/**
+ * Strips inline/block Markdown markup from a single line so that reading-mode
+ * DOM text (which the renderer delivers without markup) can be matched against
+ * raw source lines. Removes leading blockquote/list/heading markers, link
+ * syntax, and emphasis/code/highlight delimiters, then collapses whitespace.
+ */
+function normalizeMarkdownLine(line: string): string {
+  let s = line;
+  // Leading blockquote markers (possibly nested: "> > ").
+  while (/^\s*>/.test(s)) s = s.replace(/^\s*>\s?/, '');
+  // Leading heading hashes.
+  s = s.replace(/^\s*#{1,6}\s+/, '');
+  // Leading list bullet / ordered marker.
+  s = s.replace(/^\s*([-*+]|\d+[.)])\s+/, '');
+  // Wikilinks [[target|display]] / [[target]] → display (or target).
+  s = s.replace(/\[\[(?:[^\]|]*\|)?([^\]]+)\]\]/g, '$1');
+  // Markdown links [text](url) → text.
+  s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  // Inline emphasis / code / highlight / strikethrough delimiters.
+  s = s.replace(/[*_=`~]/g, '');
+  // Collapse whitespace.
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 type CustomHighlightRegistry = {
   delete: (name: string) => boolean;
   set: (name: string, highlight: unknown) => void;
@@ -456,11 +480,23 @@ export class SelectionController {
   }
 
   /**
-   * Reads the file and searches for the selection text to compute true 1-indexed
-   * start/end line numbers. Falls back through progressively looser matches
-   * (full text → trimmed → first non-empty line) because preview-mode DOM text
-   * may drop trailing whitespace or differ from source markdown for headings,
-   * list bullets, etc.
+   * Reads the file and resolves the selection's true 1-indexed start line + line
+   * count.
+   *
+   * Why this is non-trivial: in reading/preview mode the DOM `Selection` returns
+   * *rendered* text with Markdown markup stripped — `- ==creates==` becomes
+   * `creates`, `**bold**` becomes `bold`, `` `code` `` becomes `code`, list
+   * bullets and heading hashes vanish. A raw `content.indexOf(selectedText)`
+   * therefore fails on any line that has formatting, and the old code fell back
+   * to line 1 — so every pin showed `lines="1-N"`.
+   *
+   * Strategy:
+   *   1. Fast path — exact substring match (works for code blocks / verbatim
+   *      text that the renderer leaves untouched).
+   *   2. Markdown-aware match — normalize every source line (strip markup) and
+   *      match the normalized selection lines against them. Source line must
+   *      *contain* the selection line, which is robust to the renderer dropping
+   *      trailing punctuation/whitespace.
    */
   private async deriveLinesFromContent(
     notePath: string,
@@ -477,27 +513,52 @@ export class SelectionController {
       return null;
     }
 
-    const firstNonEmptyLine = selectedText
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .find((l) => l.length > 0) ?? '';
-
-    const candidates = [selectedText, selectedText.trim(), firstNonEmptyLine]
-      .filter((c): c is string => Boolean(c));
-
-    for (const candidate of candidates) {
-      const idx = content.indexOf(candidate);
-      if (idx === -1) continue;
-
-      const startLine = content.slice(0, idx).split('\n').length;
-      // Use the full original selectedText length for end so multi-line
-      // selections that matched only on first-line still cover the right span.
-      const matchEndIdx = Math.min(idx + selectedText.length, content.length);
-      const endLine = content.slice(0, matchEndIdx).split('\n').length;
-      const lineCount = Math.max(1, endLine - startLine + 1);
-      return { startLine, lineCount };
+    // 1. Fast path: verbatim substring (code, unformatted text).
+    const trimmed = selectedText.trim();
+    const exactIdx = trimmed ? content.indexOf(trimmed) : -1;
+    if (exactIdx !== -1) {
+      const startLine = content.slice(0, exactIdx).split('\n').length;
+      const endIdx = Math.min(exactIdx + trimmed.length, content.length);
+      const endLine = content.slice(0, endIdx).split('\n').length;
+      return { startLine, lineCount: Math.max(1, endLine - startLine + 1) };
     }
 
+    // 2. Markdown-aware, line-based match.
+    const normSource = content.split('\n').map((l) => normalizeMarkdownLine(l));
+    const selNorm = selectedText
+      .split(/\r?\n/)
+      .map((l) => normalizeMarkdownLine(l))
+      .filter((l) => l.length > 0);
+    if (selNorm.length === 0) return null;
+
+    // Source line (normalized) must contain the selection line (normalized).
+    const lineMatches = (source: string, target: string): boolean =>
+      target.length > 0 && (source === target || source.includes(target));
+
+    if (selNorm.length > 1) {
+      // Contiguous block: N consecutive source lines matching N selection lines.
+      for (let i = 0; i + selNorm.length <= normSource.length; i++) {
+        let ok = true;
+        for (let j = 0; j < selNorm.length; j++) {
+          if (!lineMatches(normSource[i + j], selNorm[j])) { ok = false; break; }
+        }
+        if (ok) return { startLine: i + 1, lineCount: selNorm.length };
+      }
+      // Looser: anchor on the first selection line, extend to the last match.
+      const startIdx = normSource.findIndex((l) => lineMatches(l, selNorm[0]));
+      if (startIdx !== -1) {
+        let endIdx = startIdx;
+        for (let k = normSource.length - 1; k >= startIdx; k--) {
+          if (lineMatches(normSource[k], selNorm[selNorm.length - 1])) { endIdx = k; break; }
+        }
+        return { startLine: startIdx + 1, lineCount: Math.max(1, endIdx - startIdx + 1) };
+      }
+      return null;
+    }
+
+    // Single-line selection: first source line that contains it.
+    const idx = normSource.findIndex((l) => lineMatches(l, selNorm[0]));
+    if (idx !== -1) return { startLine: idx + 1, lineCount: 1 };
     return null;
   }
 
