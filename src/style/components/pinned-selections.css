@@ -4,9 +4,16 @@
  * Floating "Attach to chat" button
  * ============================================ */
 
-.claudian-floating-attach-btn {
+/* Container holds the main pill + the small comment-icon button. */
+.claudian-floating-attach {
   position: fixed;
   z-index: 1000;
+  display: inline-flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.claudian-floating-attach-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -22,6 +29,37 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
   user-select: none;
   transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+
+/* Small round icon button — pin + open the comment field at once. */
+.claudian-floating-attach-comment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  user-select: none;
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+
+.claudian-floating-attach-comment:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+}
+
+.claudian-floating-attach-comment:active {
+  transform: translateY(0);
+}
+
+.claudian-floating-attach-comment svg {
+  width: 15px;
+  height: 15px;
 }
 
 .claudian-floating-attach-btn:hover {

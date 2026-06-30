@@ -129,6 +129,19 @@ export class PinnedSelectionsRow {
     this.rootEl.remove();
   }
 
+  /**
+   * Expand a chip's comment field and focus it. Called by the floating
+   * "attach + comment" button so the user can type a comment immediately
+   * after pinning, without hunting for the chip and clicking its toggle.
+   */
+  expandForComment(id: string): void {
+    // A collapsed list hides all chips — open it so the field is visible.
+    this.isListCollapsed = false;
+    this.expanded.add(id);
+    this.justExpandedId = id;
+    this.render(this.chatState.pinnedSelections);
+  }
+
   // ============================================
   // Chip rendering
   // ============================================

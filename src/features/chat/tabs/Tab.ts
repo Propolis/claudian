@@ -1251,9 +1251,12 @@ export function initializeTabControllers(
   );
 
   // Multi-selection fork: floating attach button + chip row + state wiring.
+  // The comment button pins, then opens the new chip's comment field at once
+  // (resolved lazily so it works regardless of construction order).
   tab.ui.floatingAttachButton = new FloatingAttachButton(
     plugin.app,
     tab.controllers.selectionController,
+    (pinId) => tab.ui.pinnedSelectionsRow?.expandForComment(pinId),
   );
   tab.ui.pinnedSelectionsRow = new PinnedSelectionsRow(
     plugin.app,
