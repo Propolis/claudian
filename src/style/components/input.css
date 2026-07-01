@@ -4,6 +4,70 @@
   padding: 12px 0 0 0;
 }
 
+/* ============================================
+ * Multi-selection fork: composer resize / collapse drag handle
+ * ============================================ */
+
+.claudian-composer-resize-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 14px;
+  margin: -6px 0 2px 0;
+  cursor: ns-resize;
+  touch-action: none;   /* pointer drives resize, not page scroll */
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.claudian-composer-resize-handle__grip {
+  width: 44px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--background-modifier-border);
+  transition: background 120ms ease, width 120ms ease;
+}
+
+.claudian-composer-resize-handle:hover .claudian-composer-resize-handle__grip {
+  background: var(--interactive-accent);
+  width: 60px;
+}
+
+/* While dragging: kill text selection + force the resize cursor everywhere. */
+body.claudian-composer-resizing,
+body.claudian-composer-resizing * {
+  user-select: none !important;
+  cursor: ns-resize !important;
+}
+
+/* Collapsed: hide the whole input, leave only the handle as a restore bar. */
+.claudian-input-container.claudian-composer-collapsed {
+  padding-top: 0;
+}
+
+.claudian-input-container.claudian-composer-collapsed .claudian-input-queue-row,
+.claudian-input-container.claudian-composer-collapsed .claudian-input-nav-row,
+.claudian-input-container.claudian-composer-collapsed .claudian-input-wrapper {
+  display: none !important;
+}
+
+.claudian-input-container.claudian-composer-collapsed .claudian-composer-resize-handle {
+  height: 24px;
+  margin: 0;
+}
+
+.claudian-input-container.claudian-composer-collapsed .claudian-composer-resize-handle__grip {
+  width: 32px;
+  background: var(--interactive-accent);
+}
+
+.claudian-input-container.claudian-composer-collapsed .claudian-composer-resize-handle::after {
+  content: 'Показать поле ввода';
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
 /* Input wrapper (border container) - flex column so textarea expands when no chips */
 /* Height calculation: context row (36px) + textarea min (60px) + toolbar (38px) + border (2px) = 136px */
 .claudian-input-wrapper {

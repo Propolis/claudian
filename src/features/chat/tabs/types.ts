@@ -15,6 +15,7 @@ import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
 import type { BangBashModeManager } from '../ui/BangBashModeManager';
+import type { ComposerResizeController } from '../ui/ComposerResizeController';
 import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
 import type {
@@ -134,6 +135,8 @@ export interface TabUIComponents {
   floatingAttachButton: FloatingAttachButton | null;
   /** Multi-selection fork: mic button for voice dictation in the composer. */
   voiceDictationButton: VoiceDictationButton | null;
+  /** Multi-selection fork: drag-to-resize / collapse controller for the composer. */
+  composerResizeController: ComposerResizeController | null;
 }
 
 /**
@@ -151,6 +154,9 @@ export interface TabDOMElements {
   queueIndicatorEl: HTMLElement;
   inputWrapper: HTMLElement;
   inputEl: HTMLTextAreaElement;
+
+  /** Multi-selection fork: drag handle at the top of the composer for resize/collapse. */
+  composerResizeHandleEl: HTMLElement;
 
   /** Nav row for tab badges and header icons (above input wrapper). */
   navRowEl: HTMLElement;

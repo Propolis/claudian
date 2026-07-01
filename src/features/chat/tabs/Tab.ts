@@ -41,6 +41,7 @@ import { BangBashService } from '../services/BangBashService';
 import { SubagentManager } from '../services/SubagentManager';
 import { ChatState } from '../state/ChatState';
 import { BangBashModeManager as BangBashModeManagerClass } from '../ui/BangBashModeManager';
+import { ComposerResizeController } from '../ui/ComposerResizeController';
 import { FileContextManager } from '../ui/FileContext';
 import { ImageContextManager } from '../ui/ImageContext';
 import { createInputToolbar } from '../ui/InputToolbar';
@@ -456,6 +457,7 @@ export function createTab(options: TabCreateOptions): TabData {
       pinnedSelectionsRow: null,
       floatingAttachButton: null,
       voiceDictationButton: null,
+      composerResizeController: null,
     },
     dom,
     renderer: null,
@@ -473,6 +475,12 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
   const welcomeEl = messagesEl.createDiv({ cls: 'claudian-welcome' });
   const statusPanelContainerEl = contentEl.createDiv({ cls: 'claudian-status-panel-container' });
   const inputContainerEl = contentEl.createDiv({ cls: 'claudian-input-container' });
+  // Multi-selection fork: drag handle at the very top of the composer — resize
+  // the input box up/down, or drag/tap all the way down to collapse it.
+  const composerResizeHandleEl = inputContainerEl.createDiv({ cls: 'claudian-composer-resize-handle' });
+  composerResizeHandleEl.createDiv({ cls: 'claudian-composer-resize-handle__grip' });
+  composerResizeHandleEl.setAttribute('aria-label', 'Изменить высоту поля ввода (перетащить) / свернуть (тап)');
+  composerResizeHandleEl.setAttribute('title', 'Перетащить — высота поля; тап — свернуть/показать');
   const queueIndicatorEl = inputContainerEl.createDiv({ cls: 'claudian-input-queue-row' });
   const navRowEl = inputContainerEl.createDiv({ cls: 'claudian-input-nav-row' });
   const inputWrapper = inputContainerEl.createDiv({ cls: 'claudian-input-wrapper' });
@@ -494,6 +502,7 @@ function buildTabDOM(contentEl: HTMLElement): TabDOMElements {
     welcomeEl,
     statusPanelContainerEl,
     inputContainerEl,
+    composerResizeHandleEl,
     queueIndicatorEl,
     inputWrapper,
     inputEl,
@@ -1274,6 +1283,18 @@ export function initializeTabControllers(
     },
   };
 
+  // Multi-selection fork: drag-to-resize / collapse handle for the composer.
+  tab.ui.composerResizeController = new ComposerResizeController(
+    dom.composerResizeHandleEl,
+    dom.inputContainerEl,
+    dom.inputWrapper,
+    dom.inputEl,
+    {
+      getSettings: () => plugin.settings,
+      saveSettings: () => { void plugin.saveSettings(); },
+    },
+  );
+
   tab.controllers.browserSelectionController = new BrowserSelectionController(
     plugin.app,
     dom.browserIndicatorEl!,
@@ -1616,6 +1637,9 @@ export function activateTab(tab: TabData): void {
   tab.controllers.selectionController?.start();
   tab.controllers.browserSelectionController?.start();
   tab.controllers.canvasSelectionController?.start();
+  // Composer height/collapse is a global setting; re-sync this tab's DOM in case
+  // another tab changed it while this one was hidden.
+  tab.ui.composerResizeController?.applyState();
   // Refresh navigation sidebar visibility (dimensions now available after display)
   tab.ui.navigationSidebar?.updateVisibility();
 }
@@ -1651,6 +1675,8 @@ export async function destroyTab(tab: TabData): Promise<void> {
   tab.ui.pinnedSelectionsRow = null;
   tab.ui.voiceDictationButton?.dispose();
   tab.ui.voiceDictationButton = null;
+  tab.ui.composerResizeController?.dispose();
+  tab.ui.composerResizeController = null;
 
   cleanupThinkingBlock(tab.state.currentThinkingState);
   tab.state.currentThinkingState = null;

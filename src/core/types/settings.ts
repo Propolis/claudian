@@ -149,6 +149,13 @@ export interface ClaudianSettings {
   /** Transcription language: 'auto' to let Whisper detect, or an ISO code like 'ru'/'en'. */
   voiceLanguage?: string;
 
+  // Composer resize (multi-selection fork). User can drag the composer's top edge
+  // to set a fixed height, or collapse it entirely to see more of the chat.
+  /** Manual composer height in px. null = auto-resize (default upstream behaviour). */
+  composerHeight?: number | null;
+  /** When true, the composer input is collapsed (hidden), leaving only the chat. */
+  composerCollapsed?: boolean;
+
   // Environment
   sharedEnvironmentVariables: string;
   envSnippets: EnvSnippet[];

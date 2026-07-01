@@ -31,6 +31,8 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   voiceEnabled: true,
   groqApiKey: '',
   voiceLanguage: 'auto',
+  composerHeight: null,
+  composerCollapsed: false,
 
   sharedEnvironmentVariables: '',
   envSnippets: [],

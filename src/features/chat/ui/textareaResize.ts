@@ -28,6 +28,11 @@ export function calculateTextareaMinHeight({
  * - Max height is capped at 55% of view height (minimum 150px)
  */
 export function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
+  // Multi-selection fork: when the user has dragged the composer to a fixed
+  // height (ComposerResizeController sets data-manual-height), auto-resize is
+  // disabled — the box stays at the chosen size and content scrolls inside it.
+  if (textarea.dataset.manualHeight) return;
+
   const viewHeight = textarea.closest('.claudian-container')?.clientHeight ?? window.innerHeight;
   const maxHeight = calculateTextareaMaxHeight(viewHeight);
 
